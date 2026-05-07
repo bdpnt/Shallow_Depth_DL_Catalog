@@ -125,6 +125,23 @@ def run_pipeline():
         check=True,
     )
 
+    # Dedup each source catalog before fusion
+    _source_catalogs = [
+        os.path.join(_OBS, 'RESIF_20-25.obs'),
+        os.path.join(_OBS, 'IGN_20-25.obs'),
+        os.path.join(_OBS, 'ICGC_20-25.obs'),
+        os.path.join(_OBS, 'LDG_20-25.obs'),
+        os.path.join(_OBS, 'OMP_2016.obs'),
+        os.path.join(_OBS, 'OMP_78-19.obs'),
+    ]
+    for _catalog_path in _source_catalogs:
+        params_dedup = MergeDoublesParams(
+            global_bulletin_path = _catalog_path,
+            max_dt_seconds       = 1.0,
+            max_dist_km          = 50.0,
+        )
+        global_obs.fuse_bulletins.find_and_merge_doubles(params_dedup)
+
     # Fusion all bulletins
     params_fusion = FusionParams(
         global_bulletin_path = os.path.join(_OBS, 'GLOBAL.obs'),
