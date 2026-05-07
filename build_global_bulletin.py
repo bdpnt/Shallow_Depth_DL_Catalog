@@ -166,15 +166,6 @@ def run_pipeline():
         check=True,
     )
 
-    # Check for potential doubles that came from the same Bulletin
-    params_merge_doubles = MergeDoublesParams(
-        global_bulletin_path = os.path.join(_OBS, 'GLOBAL.obs'),
-        max_dt_seconds       = 1.0,
-        max_dist_km          = 50.0,
-    )
-
-    global_obs.fuse_bulletins.find_and_merge_doubles(params_merge_doubles)
-
 
 # ---------------------------------------------------------------------------
 # CLI entry point
