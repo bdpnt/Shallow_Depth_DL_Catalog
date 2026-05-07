@@ -1246,6 +1246,7 @@ def find_and_merge_doubles(parameters, log_dir=None):
 
         if kept_idx is None:   # choice was 's'
             print('  → Kept all.\n')
+            logger.info(f"Group {group_num}: kept all events (user skipped)")
             continue
 
         kept        = group_events[kept_idx]
@@ -1264,13 +1265,20 @@ def find_and_merge_doubles(parameters, log_dir=None):
         n_extra = len(kept_phases) - len(kept['phases'])
         if discard_set:
             discard_label = ', '.join(f'Event {i + 1}' for i in sorted(discard_set))
+            discard_bids  = ', '.join(str(group_events[i]['bid']) for i in sorted(discard_set))
             print(f'  → Kept Event {kept_idx + 1} (BulletinID={kept["bid"]}), '
                   f'discarded {discard_label} (no phase merge), '
                   f'merged remaining.  {n_extra} unique phase(s) added.\n')
+            logger.info(f"Group {group_num}: kept BulletinID={kept['bid']}, "
+                        f"discarded BulletinID(s)={discard_bids} (no phase merge), "
+                        f"merged remaining, {n_extra} unique phase(s) added")
         else:
             n_merged = len(group_events) - 1
+            merged_bids = ', '.join(str(e['bid']) for i, e in enumerate(group_events) if i != kept_idx)
             print(f'  → Kept Event {kept_idx + 1} (BulletinID={kept["bid"]}), '
                   f'merged {n_merged} other event(s).  {n_extra} unique phase(s) added.\n')
+            logger.info(f"Group {group_num}: kept BulletinID={kept['bid']}, "
+                        f"merged BulletinID(s)={merged_bids}, {n_extra} unique phase(s) added")
 
     # ------------------------------------------------------------------ #
     # 3. Rebuild bulletin                                                  #
