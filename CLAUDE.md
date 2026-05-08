@@ -65,7 +65,9 @@ Scripts in `complem_figures/` for visualization and statistics:
 - `error_maps.py` — location uncertainty maps
 - `cross_section.py` — vertical cross-sections
 
-> **Environment**: scripts that use PyGMT (`event_maps.py`, `cross_section.py`) must be run with the `pygmt_env` conda environment. All other pipeline scripts use `seisbench_env`.
+> **Environments**:
+> - `seisbench_env` → `generate_complem_figures.py` (Gutenberg-Richter, depth maps, error maps)
+> - `pygmt_env`     → `generate_event_maps.py` (event maps for each zone and final catalog)
 
 `zone_Arette/` — focused analysis of the Arette seismic zone.
 
