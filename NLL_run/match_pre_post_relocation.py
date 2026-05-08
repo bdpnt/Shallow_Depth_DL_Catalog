@@ -281,9 +281,9 @@ def match_catalogues(
        Each component is a local "group."
     3. Resolve each group:
          1:1  → auto-assign.
-         1:N  → auto-pick by combined time+distance score if unambiguous
-                (score gap ≥ 0.1); otherwise interactive (candidate number
-                prompt, next df1 event shown for context).
+         1:N  → auto-pick closest by time if unambiguous (gap ≥ 0.5 s);
+                otherwise interactive (candidate number prompt, next df1
+                event shown for context).
          M:N  → always interactive (letter/number assignment syntax).
     4. Build the output DataFrame.
 
@@ -622,22 +622,17 @@ def match_catalogues(
                 np.array([row1['Lat']]), np.array([row1['Lon']]), np.array([row1['Dep']])
             )[0]
 
-            d2_ns     = d2_times[d2_idxs]
-            dt_s      = np.abs(d2_ns - t1_ns) / 1e9
+            d2_ns = d2_times[d2_idxs]
+            dts   = np.abs(d2_ns - t1_ns)
+            order = np.argsort(dts)
 
-            xyz_cands = to_cartesian(
-                d2.iloc[d2_idxs]['Lat'].values,
-                d2.iloc[d2_idxs]['Lon'].values,
-                d2.iloc[d2_idxs]['Dep'].values,
-            )
-            dist_km = np.linalg.norm(xyz_cands - xyz1, axis=1)
-            scores  = dt_s / max_dt_seconds + dist_km / max_dist_km
-            order   = np.argsort(scores)
+            ambiguous_threshold_ns = int(0.5 * 1e9)
 
             # Auto-resolve if best candidate is clearly separated from the next
             is_ambiguous = (
-                len(scores) > 1
-                and (scores[order[1]] - scores[order[0]]) < 0.1
+                len(dts) > 1
+                and (dts[order[0]] == dts[order[1]]
+                     or (dts[order[1]] - dts[order[0]]) < ambiguous_threshold_ns)
             )
 
             if not is_ambiguous:
@@ -645,7 +640,7 @@ def match_catalogues(
                 match_records.append({'d1_idx': i, 'd2_idx': chosen_j, 'extra_phases': []})
                 logger.info(
                     f"AUTO 1:N  d1={i}  chosen_d2={chosen_j}  "
-                    f"dt={dt_s[order[0]]:.3f}s  dist={dist_km[order[0]]:.1f}km"
+                    f"dt={dts[order[0]]/1e9:.3f}s"
                 )
                 continue
 
