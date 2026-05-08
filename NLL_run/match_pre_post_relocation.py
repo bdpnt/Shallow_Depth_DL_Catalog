@@ -267,7 +267,6 @@ def match_catalogues(
     df2: pd.DataFrame,
     max_dt_seconds: float = 10.0,
     max_dist_km: float = 50.0,
-    min_ambiguous_dt: float = 0.5,
     bulletin_lines: list = None,
 ) -> pd.DataFrame:
     """
@@ -282,8 +281,9 @@ def match_catalogues(
        Each component is a local "group."
     3. Resolve each group:
          1:1  → auto-assign.
-         1:N  → auto-pick closest if unambiguous; otherwise interactive
-                (candidate number prompt, next df1 event shown for context).
+         1:N  → auto-pick by combined time+distance score if unambiguous
+                (score gap ≥ 0.1); otherwise interactive (candidate number
+                prompt, next df1 event shown for context).
          M:N  → always interactive (letter/number assignment syntax).
     4. Build the output DataFrame.
 
@@ -311,8 +311,6 @@ def match_catalogues(
     df2              : pd.DataFrame — reference catalogue (NLL result)
     max_dt_seconds   : float        — candidate search time window (default: 10)
     max_dist_km      : float        — candidate search distance (default: 50)
-    min_ambiguous_dt : float        — minimum time gap between NLL candidates
-                       for the match to be considered unambiguous (default: 0.5)
     bulletin_lines   : list[str], optional — raw bulletin file lines; enables
                        phase printing and phase merging for duplicates
 
@@ -371,8 +369,7 @@ def match_catalogues(
     xyz2 = to_cartesian(d2['Lat'].values, d2['Lon'].values, d2['Dep'].values)
     tree = cKDTree(xyz2)
 
-    max_dt_ns              = int(max_dt_seconds   * 1e9)
-    ambiguous_threshold_ns = int(min_ambiguous_dt * 1e9)
+    max_dt_ns = int(max_dt_seconds * 1e9)
 
     # ------------------------------------------------------------------
     # Step 1: build bipartite candidate graph
@@ -625,15 +622,22 @@ def match_catalogues(
                 np.array([row1['Lat']]), np.array([row1['Lon']]), np.array([row1['Dep']])
             )[0]
 
-            d2_ns = d2_times[d2_idxs]
-            dts   = np.abs(d2_ns - t1_ns)
-            order = np.argsort(dts)
+            d2_ns     = d2_times[d2_idxs]
+            dt_s      = np.abs(d2_ns - t1_ns) / 1e9
+
+            xyz_cands = to_cartesian(
+                d2.iloc[d2_idxs]['Lat'].values,
+                d2.iloc[d2_idxs]['Lon'].values,
+                d2.iloc[d2_idxs]['Dep'].values,
+            )
+            dist_km = np.linalg.norm(xyz_cands - xyz1, axis=1)
+            scores  = dt_s / max_dt_seconds + dist_km / max_dist_km
+            order   = np.argsort(scores)
 
             # Auto-resolve if best candidate is clearly separated from the next
             is_ambiguous = (
-                len(dts) > 1
-                and (dts[order[0]] == dts[order[1]]
-                     or (dts[order[1]] - dts[order[0]]) < ambiguous_threshold_ns)
+                len(scores) > 1
+                and (scores[order[1]] - scores[order[0]]) < 0.1
             )
 
             if not is_ambiguous:
@@ -641,7 +645,7 @@ def match_catalogues(
                 match_records.append({'d1_idx': i, 'd2_idx': chosen_j, 'extra_phases': []})
                 logger.info(
                     f"AUTO 1:N  d1={i}  chosen_d2={chosen_j}  "
-                    f"dt={dts[order[0]]/1e9:.3f}s"
+                    f"dt={dt_s[order[0]]:.3f}s  dist={dist_km[order[0]]:.1f}km"
                 )
                 continue
 
@@ -710,7 +714,24 @@ def match_catalogues(
                 print(f"  obs {letters[k]}  │ {_d1_info(i_ev)}")
             print(sep)
             for k, j in enumerate(d2_idxs, start=1):
-                print(f"  NLL {k}  │ {_d2_info(j)}")
+                nll_t   = d2_times[j]
+                nll_xyz = to_cartesian(
+                    np.array([d2.iloc[j]['Lat']]),
+                    np.array([d2.iloc[j]['Lon']]),
+                    np.array([d2.iloc[j]['Dep']]),
+                )[0]
+                deltas = []
+                for lk, i_ev in enumerate(d1_idxs):
+                    obs_t   = d1.iloc[i_ev]['Time'].value
+                    obs_xyz = to_cartesian(
+                        np.array([d1.iloc[i_ev]['Lat']]),
+                        np.array([d1.iloc[i_ev]['Lon']]),
+                        np.array([d1.iloc[i_ev]['Dep']]),
+                    )[0]
+                    dt_s  = (nll_t - obs_t) / 1e9
+                    dd_km = float(np.linalg.norm(nll_xyz - obs_xyz))
+                    deltas.append(f"{letters[lk]}(Δt{dt_s:+.2f}s Δd{dd_km:.1f}km)")
+                print(f"  NLL {k}  │ {_d2_info(j)}  [{' | '.join(deltas)}]")
             print(sep)
             print("  Commands (space or comma separated):")
             print("    A1        → assign obs-A to NLL-1")
@@ -787,6 +808,24 @@ def match_catalogues(
                 f"assignments={assignments}  merges={merges}  drops={list(drops)}"
             )
             break
+
+    # ------------------------------------------------------------------
+    # Match summary
+    # ------------------------------------------------------------------
+    matched_d1_set        = {rec['d1_idx'] for rec in match_records}
+    matched_d2_set        = {rec['d2_idx'] for rec in match_records}
+    n_no_cand             = len(d1) - len(adj_d1)
+    n_with_cand_unmatched = len(adj_d1) - len(matched_d1_set)
+    n_nll_unmatched       = len(d2) - len(matched_d2_set)
+
+    summary_line = (
+        f"Match summary: {len(matched_d1_set)}/{len(d1)} obs matched"
+        f" | {n_no_cand} obs with no NLL candidate"
+        f" | {n_with_cand_unmatched} obs with candidates but unmatched"
+        f" | {n_nll_unmatched}/{len(d2)} NLL events unmatched"
+    )
+    logger.info(summary_line)
+    print(f"\n  {summary_line}")
 
     # ------------------------------------------------------------------
     # Step 4: build output DataFrame
