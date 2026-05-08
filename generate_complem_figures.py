@@ -11,7 +11,7 @@ Runs in order:
   3. Depth maps  per 5-year period (RESULT/FINAL.txt)
   4. Error maps  per 5-year period (RESULT/FINAL.txt)
 
-For PyGMT event maps, run generate_event_maps.py with pygmt_env.
+For PyGMT event maps, run generate_complem_maps.py with pygmt_env.
 
 Usage
 -----

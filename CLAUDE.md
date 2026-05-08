@@ -67,7 +67,7 @@ Scripts in `complem_figures/` for visualization and statistics:
 
 > **Environments**:
 > - `seisbench_env` → `generate_complem_figures.py` (Gutenberg-Richter, depth maps, error maps)
-> - `pygmt_env`     → `generate_event_maps.py` (event maps for each zone and final catalog)
+> - `pygmt_env`     → `generate_complem_maps.py` (event maps for each zone and final catalog)
 
 `zone_Arette/` — focused analysis of the Arette seismic zone.
 

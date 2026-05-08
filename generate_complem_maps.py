@@ -1,5 +1,5 @@
 """
-generate_event_maps.py
+generate_complem_maps.py
 ============================
 Produce PyGMT event maps for all NLL zones and the final catalog.
 
@@ -14,7 +14,7 @@ run generate_complem_figures.py with seisbench_env.
 
 Usage
 -----
-    python generate_event_maps.py
+    python generate_complem_maps.py
 """
 
 import os
