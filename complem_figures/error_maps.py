@@ -152,10 +152,12 @@ def _add_subplot(events, ax, type):
                     s=0.6, color='black', linewidth=0, ax=ax)
 
     col = type.lower()
+    valid_medians = median[count >= 10]
     ax.text(0.99, 0.98,
-            f"Mean Err.: {np.nanmean(events[col]):.1f}\n"
-            f"Max Err.: {np.nanmax(events[col]):.1f}\n"
-            f"Std Err.: {np.nanstd(events[col]):.1f}",
+            f"Mean Err.: {np.nanmean(valid_medians):.1f}\n"
+            f"Max Err.: {np.nanmax(valid_medians):.1f}\n"
+            f"Std Err.: {np.nanstd(valid_medians):.1f}\n"
+            f"Median (all events): {np.median(events[col]):.1f}",
             transform=ax.transAxes,
             fontweight='bold', color='black', fontsize=8, ha='right', va='top')
     ax.text(0.01, 0.98, type, transform=ax.transAxes,
