@@ -6,10 +6,11 @@ Produce matplotlib-based complementary figures for the final catalog.
 Requires: seisbench_env
 
 Runs in order:
-  1. Gutenberg-Richter distribution (GLOBAL.obs — all events, ML and Mw)
-  2. Gutenberg-Richter distribution (FINAL.obs — relocated events, ML and Mw)
-  3. Depth maps  per 5-year period (RESULT/FINAL.txt)
-  4. Error maps  per 5-year period (RESULT/FINAL.txt)
+  1. Depth histograms (GLOBAL.obs and FINAL.obs)
+  2. Gutenberg-Richter distribution (GLOBAL.obs — all events, ML and Mw)
+  3. Gutenberg-Richter distribution (FINAL.obs — relocated events, ML and Mw)
+  4. Depth maps  per 5-year period (RESULT/FINAL.txt)
+  5. Error maps  per 5-year period (RESULT/FINAL.txt)
 
 For PyGMT event maps, run generate_complem_maps.py with pygmt_env.
 
@@ -20,7 +21,8 @@ Usage
 
 import os
 
-from complem_figures.depth_maps        import DepthMapsParams,       generate_figure as gen_depth
+from complem_figures.depth_histogram   import DepthHistogramParams,   generate_figure as gen_depth_hist
+from complem_figures.depth_maps        import DepthMapsParams,        generate_figure as gen_depth
 from complem_figures.error_maps        import ErrorMapsParams,        generate_figure as gen_error
 from complem_figures.gutenberg_richter import GutenbergRichterParams, generate_figure as gen_gr
 
@@ -39,9 +41,19 @@ _FIGS         = os.path.join(_PROJECT_ROOT, 'complem_figures')
 # ---------------------------------------------------------------------------
 
 def run_pipeline():
-    """Generate Gutenberg-Richter, depth, and error map figures."""
+    """Generate depth histograms, Gutenberg-Richter, depth, and error map figures."""
 
-    # 1 & 2. Gutenberg-Richter
+    # 1 & 2. Depth histograms
+    for bulletin, tag in [
+        (os.path.join(_OBS, 'GLOBAL.obs'), 'GLOBAL'),
+        (os.path.join(_OBS, 'FINAL.obs'),  'FINAL'),
+    ]:
+        gen_depth_hist(DepthHistogramParams(
+            file_bulletin = bulletin,
+            fig_save      = os.path.join(_FIGS, 'depth_histogram', f'{tag}.png'),
+        ))
+
+    # 3 & 4. Gutenberg-Richter
     for bulletin, tag in [
         (os.path.join(_OBS, 'GLOBAL.obs'), 'GLOBAL'),
         (os.path.join(_OBS, 'FINAL.obs'),  'FINAL'),
