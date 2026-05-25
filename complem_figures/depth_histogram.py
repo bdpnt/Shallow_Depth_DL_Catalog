@@ -38,8 +38,8 @@ _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 class DepthHistogramParams:
     file_bulletin: str
     fig_save:      str
-    bin_size:      float = 2.0   # km per bin
-    max_depth:     float = 60.0  # y-axis lower limit (km)
+    bin_size:      float = 1.0   # km per bin
+    max_depth:     float = 40.0  # y-axis lower limit (km)
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ def generate_figure(parameters):
             transform=ax.transAxes, ha='right', va='bottom',
             fontsize=9)
 
-    plt.savefig(parameters.fig_save)
+    plt.savefig(parameters.fig_save, dpi=300)
     plt.close(fig)
 
     print(f'Figure saved @ {parameters.fig_save}')
@@ -109,10 +109,10 @@ def main():
                         help='Input .obs bulletin')
     parser.add_argument('--output',   default=os.path.join(_MODULE_DIR, 'depth_histogram', 'GLOBAL.png'),
                         help='Output figure path')
-    parser.add_argument('--bin-size', type=float, default=2.0,
-                        help='Bin size in km (default: 2.0)')
-    parser.add_argument('--max-depth', type=float, default=60.0,
-                        help='Y-axis lower limit in km (default: 60.0)')
+    parser.add_argument('--bin-size', type=float, default=1.0,
+                        help='Bin size in km (default: 1.0)')
+    parser.add_argument('--max-depth', type=float, default=40.0,
+                        help='Y-axis lower limit in km (default: 40.0)')
     args = parser.parse_args()
 
     generate_figure(DepthHistogramParams(
