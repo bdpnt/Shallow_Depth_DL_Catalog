@@ -144,18 +144,20 @@ def _add_subplot(events, ax, type):
 
     median_masked = np.ma.masked_where(count < 10, median)
     mesh = ax.pcolormesh(lon_edges, lat_edges, median_masked,
-                         vmax=vmax, vmin=vmin, cmap='rocket_r',
+                         vmax=vmax, vmin=vmin, cmap='viridis_r',
                          shading='auto', alpha=0.9)
 
     sns.scatterplot(x=events['longitude'], y=events['latitude'],
                     s=0.6, color='black', linewidth=0, ax=ax)
 
     col = type.lower()
+    valid_medians = median[count >= 10]
     ax.text(0.99, 0.98,
-            f"Mean Depth: {np.nanmean(events[col]):.1f}\n"
-            f"Max Depth: {np.nanmax(events[col]):.1f}\n"
-            f"Std Depth: {np.nanstd(events[col]):.1f}\n"
-            f"Q99 Depth: {np.nanquantile(events[col], 0.99):.1f}",
+            f"Mean Depth: {np.nanmean(valid_medians):.1f}\n"
+            f"Max Depth: {np.nanmax(valid_medians):.1f}\n"
+            f"Std Depth: {np.nanstd(valid_medians):.1f}\n"
+            f"Q99 Depth: {np.nanquantile(valid_medians, 0.99):.1f}\n"
+            f"Median (all events): {np.nanmedian(events[col]):.1f}",
             transform=ax.transAxes,
             fontweight='bold', color='black', fontsize=8, ha='right', va='top')
     ax.text(0.01, 0.98, type, transform=ax.transAxes,
@@ -174,7 +176,7 @@ def _generate_plot(args, map_folder):
     date, df = args
     fig, ax  = plt.subplots(1, 1, figsize=(12, 6), layout='constrained')
     mesh     = _add_subplot(df, ax, type='DEPTH')
-    fig.colorbar(mesh, ax=ax, label='Median depth (km) - 3x3 grid',
+    fig.colorbar(mesh, ax=ax, label='Median depth (km) - 9x9 grid',
                  shrink=0.7, pad=0.025, aspect=50)
     plt.suptitle(f'Depth map\n{date}', fontweight='bold')
     plt.savefig(f'{map_folder}{date}.pdf')

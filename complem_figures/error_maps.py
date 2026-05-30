@@ -152,10 +152,12 @@ def _add_subplot(events, ax, type):
                     s=0.6, color='black', linewidth=0, ax=ax)
 
     col = type.lower()
+    valid_medians = median[count >= 10]
     ax.text(0.99, 0.98,
-            f"Mean Err.: {np.nanmean(events[col]):.1f}\n"
-            f"Max Err.: {np.nanmax(events[col]):.1f}\n"
-            f"Std Err.: {np.nanstd(events[col]):.1f}",
+            f"Mean Err.: {np.nanmean(valid_medians):.1f}\n"
+            f"Max Err.: {np.nanmax(valid_medians):.1f}\n"
+            f"Std Err.: {np.nanstd(valid_medians):.1f}\n"
+            f"Median (all events): {np.nanmedian(events[col]):.1f}",
             transform=ax.transAxes,
             fontweight='bold', color='black', fontsize=8, ha='right', va='top')
     ax.text(0.01, 0.98, type, transform=ax.transAxes,
@@ -176,7 +178,7 @@ def _generate_plot(args, map_folder):
     _add_subplot(df, axes[0], type='ERH')
     mesh = _add_subplot(df, axes[1], type='ERV')
     fig.colorbar(mesh, ax=[axes[0], axes[1]],
-                 label='Median error (km) - 3x3 grid',
+                 label='Median error (km) - 9x9 grid',
                  shrink=0.7, pad=0.025, aspect=50)
     plt.suptitle(f'Horizontal and vertical error maps\n{date}', fontweight='bold')
     plt.savefig(f'{map_folder}{date}.pdf')

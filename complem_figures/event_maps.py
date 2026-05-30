@@ -3,13 +3,23 @@ event_maps.py
 ============================
 Generate a PyGMT map of seismic events coloured by depth.
 
-Reads a .txt (NLL result) or .obs bulletin, filters high-error events, and
-plots each event on a Pyrenees basemap coloured by depth. Optionally overlays
-station positions and zone-boundary rectangles.
+Reads a .txt (NLL result) or .obs bulletin, optionally filters high-error
+events, and plots each event on a Pyrenees basemap coloured by depth.
+Optionally overlays station positions and zone-boundary rectangles.
+
+Quality filter (erh ≤ 3 km, erv ≤ 3 km, gap ≤ 300°, rms ≤ 0.5 s) is applied
+by default. Use --no-filter to skip it (e.g. for pre-relocation .obs files
+where erh/erv are not available).
 
 Usage
 -----
-    # .obs bulletin (no zone boxes)
+    # .obs bulletin — pre-relocation, no quality filter
+    python complem_figures/event_maps.py \\
+        --bulletin  obs/GLOBAL.obs \\
+        --output    complem_figures/event_maps/GLOBAL.pdf \\
+        --no-filter
+
+    # .obs bulletin — post-relocation, with filter
     python complem_figures/event_maps.py \\
         --bulletin  obs/FINAL.obs \\
         --output    complem_figures/event_maps/FINAL.pdf
@@ -50,6 +60,7 @@ class EventMapsParams:
     fileStations: Optional[str]   = None
     region_in:    Optional[tuple] = None  # ((lat_min, lon_min), (lat_max, lon_max))
     region_out:   Optional[tuple] = None  # ((lat_min, lon_min), (lat_max, lon_max))
+    no_filter:    bool            = False
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +108,8 @@ def generate_figure(parameters):
                               13: 'erv', 14: 'gap'})
             .astype(float)
         )
-        events_df = _remove_high_err(events_df)
+        if not parameters.no_filter:
+            events_df = _remove_high_err(events_df)
 
     elif ext == 'obs':
         with open(parameters.fileBulletin, 'r', encoding='utf-8') as f:
@@ -111,9 +123,11 @@ def generate_figure(parameters):
             .rename(columns={6: 'Latitude', 7: 'Longitude', 8: 'Depth',
                               9: 'Magnitude', 13: 'erh', 14: 'erv',
                               15: 'gap', 16: 'rms'})
+            .replace('None', float('nan'))
             .astype(float)
         )
-        events_df = _remove_high_err(events_df)
+        if not parameters.no_filter:
+            events_df = _remove_high_err(events_df)
 
     else:
         print(f'Unsupported format (expected "txt" or "obs"): {parameters.fileBulletin}')
@@ -190,6 +204,8 @@ def main():
                         metavar=('LAT_MIN', 'LON_MIN', 'LAT_MAX', 'LON_MAX'),
                         default=None,
                         help='Outer zone box corners: lat_min lon_min lat_max lon_max')
+    parser.add_argument('--no-filter', action='store_true',
+                        help='Skip the erh/erv/gap/rms quality filter (useful for pre-relocation .obs)')
     args = parser.parse_args()
 
     ri = args.region_in
@@ -201,6 +217,7 @@ def main():
         fileStations = args.stations,
         region_in    = ((ri[0], ri[1]), (ri[2], ri[3])) if ri else None,
         region_out   = ((ro[0], ro[1]), (ro[2], ro[3])) if ro else None,
+        no_filter    = args.no_filter,
     ))
 
 

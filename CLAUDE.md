@@ -65,6 +65,10 @@ Scripts in `complem_figures/` for visualization and statistics:
 - `error_maps.py` — location uncertainty maps
 - `cross_section.py` — vertical cross-sections
 
+> **Environments**:
+> - `seisbench_env` → `generate_complem_figures.py` (Gutenberg-Richter, depth maps, error maps)
+> - `pygmt_env`     → `generate_complem_maps.py` (event maps for each zone and final catalog)
+
 `zone_Arette/` — focused analysis of the Arette seismic zone.
 
 ---
