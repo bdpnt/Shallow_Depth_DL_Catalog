@@ -183,7 +183,7 @@ Runs the following steps in sequence:
 | 6 | `fuse_bulletins.py` | `fuse_bulletins()` | Matches and merges all cleaned catalogs into `GLOBAL.obs` |
 | 7 | `plot_global_catalog_map.py` | `plot_global_catalog_map()` | Generates a map of the merged catalog |
 
-**Matching thresholds (step 6 fusion):** ≤15 km distance, ≤2 s time, ≤1.5 magnitude units; loose matches confirmed by ≥1 shared P-phase pick.
+**Matching thresholds (step 6 fusion):** strict ≤15 km / ≤2 s / ≤1.5 mag units (ML–ML pairs); loose ≤50 km / ≤30 s, confirmed by ≥1 shared P-phase pick (same station, Δt ≤ 1 s).
 
 **Outputs:**
 - `obs/GLOBAL.obs` — unified catalog
