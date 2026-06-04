@@ -18,6 +18,7 @@ Usage
         --bulletin  obs/GLOBAL.obs \\
         --output    complem_figures/event_maps/GLOBAL.pdf \\
         --no-filter
+        --map-region -2.25 3.5 41.75 43.75
 
     # .obs bulletin — post-relocation, with filter
     python complem_figures/event_maps.py \\
