@@ -64,7 +64,7 @@ _ZONES = {
 }
 
 _ZONE_COLORS = [
-    "red", "dodgerblue", "forestgreen", "darkorange", "mediumpurple", "saddlebrown"
+    "#8c510a", "#d8b365", "#f6e8c3", "#c7eae5", "#5ab4ac", "#01665e"
 ]
 
 
