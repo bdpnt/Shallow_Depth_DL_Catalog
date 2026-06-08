@@ -44,7 +44,7 @@ class CrossSectionParams:
     fichier_seisme:  str
     save_file:       str
     stations_file:   str
-    FORMAT_fichier:  int   = 1      # 1 = NLL output, 2 = RENASS bulletin, 4 = .obs
+    FORMAT_fichier:  int   = 1      # 1 = NLL output, 2 = RENASS bulletin, 4 = .obs, 5 = CSV (Chevrot)
     use_err:         str   = 'erh'  # 'erh' or 'erv'
     lon0:            float = -0.6275
     lat0:            float = 43.0
@@ -154,6 +154,22 @@ def generate_figure(parameters):
         erv     = np.zeros_like(depth) + parameters.UNCERT_max_V - 0.01
         erh     = np.zeros_like(depth) + parameters.UNCERT_max_H - 0.01
         rms     = np.zeros_like(depth)
+        year    = data[:, 0]
+        month   = data[:, 1]
+        day     = data[:, 2]
+        hour    = data[:, 3]
+        minu    = data[:, 4]
+
+    elif parameters.FORMAT_fichier == 5:  # CSV: #YEAR MONTH DAY HOUR MINUTE SECOND LAT LON DEPTH MAG
+        data    = np.loadtxt(parameters.fichier_seisme, comments='#')
+        lon     = data[:, 7]
+        lat     = data[:, 6]
+        depth   = data[:, 8]
+        erv     = np.full(len(depth), -1.0)
+        erh     = np.full(len(depth), -1.0)
+        rms     = np.full(len(depth), -1.0)
+        gap     = np.full(len(depth), -1.0)
+        nbphase = np.full(len(depth), -1.0)
         year    = data[:, 0]
         month   = data[:, 1]
         day     = data[:, 2]
@@ -288,7 +304,7 @@ def generate_figure(parameters):
                 erh = data[:, 3]
 
     if plot_coupe:
-        if parameters.FORMAT_fichier != 4:
+        if parameters.FORMAT_fichier not in (4, 5):
             if parameters.use_err == 'erv':
                 err_col     = erv
                 sorted_data = np.column_stack((X, Z, erv))[np.argsort(erv)][::-1]
@@ -304,7 +320,7 @@ def generate_figure(parameters):
             frame      = ['xafg100+lDistance (km)', 'yafg50+lDepth (km)', 'WSen'],
         )
 
-        if parameters.FORMAT_fichier != 4:
+        if parameters.FORMAT_fichier not in (4, 5):
             if parameters.use_err == 'erv':
                 pygmt.makecpt(cmap='magma', series=[0, parameters.UNCERT_max_V], reverse=True)
             else:
@@ -332,7 +348,7 @@ def main():
     parser.add_argument('--catalog',   required=True,
                         help='Seismicity catalogue file')
     parser.add_argument('--format',    type=int, default=1,
-                        help='Catalogue format: 1=NLL, 2=RENASS, 4=obs (default: 1)')
+                        help='Catalogue format: 1=NLL, 2=RENASS, 4=obs, 5=CSV (default: 1)')
     parser.add_argument('--stations',  required=True,
                         help='GTSRCE station file')
     parser.add_argument('--output',    required=True,
