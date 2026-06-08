@@ -31,7 +31,7 @@ The workflow follows 5 main stages:
   3. **apply_magnitude_models.py** — applies the models to all `.obs` files
   4. **fuse_bulletins.py** — spatially/temporally merges all catalogs into `obs/GLOBAL.obs`
   5. **plot_global_catalog_map.py** — generates a map of the merged catalog
-- Matching thresholds: 15 km distance, 2 s time, 1.5 magnitude units, ≥2 picks
+- Matching thresholds: strict 15 km / 2 s / 1.5 mag units; loose 50 km / 30 s confirmed by ≥1 shared P-phase pick
 
 ### 4. Earthquake Relocation (NonLinLoc)
 The study area is too large for a single NLL run, so it is split into **6 geographic zones**.

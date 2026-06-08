@@ -18,6 +18,7 @@ Usage
         --bulletin  obs/GLOBAL.obs \\
         --output    complem_figures/event_maps/GLOBAL.pdf \\
         --no-filter
+        --map-region -2.25 3.5 41.75 43.75
 
     # .obs bulletin — post-relocation, with filter
     python complem_figures/event_maps.py \\
@@ -31,6 +32,12 @@ Usage
         --stations   loc/GLOBAL_1/last.stations \\
         --region-in  42.50 -2.00 43.50 -0.75 \\
         --region-out 41.60 -3.22 44.40  0.46
+
+    # custom map extent (zoom in on eastern Pyrenees)
+    python complem_figures/event_maps.py \\
+        --bulletin  obs/FINAL.obs \\
+        --output    complem_figures/event_maps/FINAL_east.pdf \\
+        --map-region 0.0 3.5 42.0 44.0
 """
 
 import argparse
@@ -60,6 +67,7 @@ class EventMapsParams:
     fileStations: Optional[str]   = None
     region_in:    Optional[tuple] = None  # ((lat_min, lon_min), (lat_max, lon_max))
     region_out:   Optional[tuple] = None  # ((lat_min, lon_min), (lat_max, lon_max))
+    map_region:   Optional[list]  = None  # [lon_min, lon_max, lat_min, lat_max]
     no_filter:    bool            = False
 
 
@@ -133,7 +141,7 @@ def generate_figure(parameters):
         print(f'Unsupported format (expected "txt" or "obs"): {parameters.fileBulletin}')
         return {'output': None}
 
-    region = [-4.0, 4, 41, 45]
+    region = parameters.map_region if parameters.map_region else [-4.0, 4, 41, 45]
 
     fig = pg.Figure()
     with pg.config(MAP_FRAME_TYPE='fancy+'):
@@ -204,6 +212,10 @@ def main():
                         metavar=('LAT_MIN', 'LON_MIN', 'LAT_MAX', 'LON_MAX'),
                         default=None,
                         help='Outer zone box corners: lat_min lon_min lat_max lon_max')
+    parser.add_argument('--map-region', nargs=4, type=float,
+                        metavar=('LON_MIN', 'LON_MAX', 'LAT_MIN', 'LAT_MAX'),
+                        default=None,
+                        help='Map extent: lon_min lon_max lat_min lat_max (default: -4 4 41 45)')
     parser.add_argument('--no-filter', action='store_true',
                         help='Skip the erh/erv/gap/rms quality filter (useful for pre-relocation .obs)')
     args = parser.parse_args()
@@ -217,6 +229,7 @@ def main():
         fileStations = args.stations,
         region_in    = ((ri[0], ri[1]), (ri[2], ri[3])) if ri else None,
         region_out   = ((ro[0], ro[1]), (ro[2], ro[3])) if ro else None,
+        map_region   = args.map_region,
         no_filter    = args.no_filter,
     ))
 
