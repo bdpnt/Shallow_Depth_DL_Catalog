@@ -65,6 +65,7 @@ class Event:
     lon:         float
     picks:       list = field(default_factory=list)   # list of pick line strings
     pick_keys:   set  = field(default_factory=set)    # (station_code, phase) pairs for O(1) dup check
+    public_id:   str  = None                          # PUBLIC_ID value (e.g. 'PYRENEES_000001')
 
 
 # ---------------------------------------------------------------------------
@@ -106,10 +107,14 @@ def load_bulletin(path):
             i += 1
             while i < len(lines) and lines[i].strip() != '':
                 pick = lines[i].rstrip('\n')
-                event.picks.append(pick)
-                parts = pick.split()
-                if len(parts) >= 5:
-                    event.pick_keys.add((parts[0].strip(), parts[4].strip()))
+                if pick.startswith('PUBLIC_ID'):
+                    parts = pick.split(None, 1)
+                    event.public_id = parts[1] if len(parts) > 1 else None
+                else:
+                    event.picks.append(pick)
+                    parts = pick.split()
+                    if len(parts) >= 5:
+                        event.pick_keys.add((parts[0].strip(), parts[4].strip()))
                 i += 1
             events.append(event)
         i += 1  # advance past blank line (or unrecognised line)
@@ -413,6 +418,8 @@ def match_picks(pick_file, bulletin_file, inventory_file, tables_file,
         f.write('\n')
         for event in events:
             f.write(event.header_line + '\n')
+            if event.public_id is not None:
+                f.write(f'PUBLIC_ID {event.public_id}\n')
             for pick in event.picks:
                 f.write(pick + '\n')
             f.write('\n')

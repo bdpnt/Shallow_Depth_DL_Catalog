@@ -277,7 +277,7 @@ def find_pick_lines(all_lines, event_id):
         curr_line = all_lines[curr]
         if curr_line.startswith('\n'):
             break
-        if not curr_line.startswith('#'):
+        if not curr_line.startswith('#') and not curr_line.startswith('PUBLIC_ID'):
             picks.append(curr_line)
     return picks
 
@@ -746,14 +746,17 @@ def _remove_magnitudes_under_1(lines):
 
 
 def _save_bulletin(lines, parameters):
-    """Write the bulletin line list to the global output .obs file."""
+    """Write the bulletin line list to the global output .obs file, assigning sequential PUBLIC_IDs."""
+    output  = []
+    counter = 0
+    for line in lines:
+        output.append(line)
+        if line.startswith('# '):
+            counter += 1
+            output.append(f'PUBLIC_ID PYRENEES_{counter:06d}\n')
     with open(parameters.global_bulletin_path, 'w') as f:
-        f.writelines(lines)
-    n_eq = sum(
-        1 for line in lines
-        if line.startswith('#') and not line.startswith('###')
-    )
-    logger.info(f"Final bulletin saved: {parameters.global_bulletin_path} ({n_eq} events)")
+        f.writelines(output)
+    logger.info(f"Final bulletin saved: {parameters.global_bulletin_path} ({counter} events)")
 
 
 # ---------------------------------------------------------------------------

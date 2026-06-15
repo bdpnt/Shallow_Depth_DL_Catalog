@@ -181,7 +181,7 @@ def _gen_gtsrce(parameters):
     unique_stations = {
         line.split()[0]
         for line in lines
-        if not (line.startswith('\n') or line.startswith('#'))
+        if not (line.startswith('\n') or line.startswith('#') or line.startswith('PUBLIC_ID'))
     }
 
     inventory         = read_inventory(parameters.fileInventory, format='STATIONXML')

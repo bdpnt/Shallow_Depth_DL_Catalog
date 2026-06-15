@@ -100,11 +100,20 @@ def sort_picks(input_path, output_path=None):
             output.append(line)  # event header
             i += 1
 
-            # Collect all pick lines for this event
-            pick_lines = []
+            # Collect all pick lines for this event; keep PUBLIC_ID separate
+            pick_lines    = []
+            public_id_line = None
             while i < len(lines) and lines[i].strip() != '':
-                pick_lines.append(lines[i].rstrip('\n'))
+                raw = lines[i].rstrip('\n')
+                if lines[i].startswith('PUBLIC_ID'):
+                    public_id_line = raw
+                else:
+                    pick_lines.append(raw)
                 i += 1
+
+            # PUBLIC_ID must stay immediately after the header
+            if public_id_line is not None:
+                output.append(public_id_line + '\n')
 
             # Sort by arrival time and write
             pick_lines.sort(key=_sort_key)

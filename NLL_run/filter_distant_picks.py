@@ -143,7 +143,7 @@ def remove_far_picks(parameters, log_dir=None):
             parts     = line.split()
             event_lat = float(parts[7])
             event_lon = float(parts[8])
-        elif event_lat is not None and line.strip() and not line.startswith('#'):
+        elif event_lat is not None and line.strip() and not line.startswith('#') and not line.startswith('PUBLIC_ID'):
             n_picks  += 1
             alt_code  = line.split()[0]
             sta_row   = sta_coords[sta_coords.AlternateCode == alt_code]
