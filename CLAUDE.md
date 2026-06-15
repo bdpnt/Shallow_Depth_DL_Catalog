@@ -48,9 +48,9 @@ The study area is too large for a single NLL run, so it is split into **6 geogra
 
 ### 5. Post-relocation Processing
 - **`finalize_nll_catalog.py`**:
-  1. Cleans NLL output files
-  2. Merges the 6 regional results into `RESULT/FINAL.txt`
-  3. Rematches relocated events back to `obs/GLOBAL.obs` to recover metadata not present in NLL output (e.g. magnitude)
+  1. Cleans `.hdr` files left by NLL in each `loc/GLOBAL_<N>/` folder
+  2. Reads the 6 per-zone NLL CSV summaries, deduplicates zone-overlap events (kept: lowest `pdfVolume`), writes → `RESULT/FINAL.csv`
+  3. Rematches relocated events back to `obs/GLOBAL.obs` via `publicId` to recover metadata not present in NLL output (e.g. magnitude)
   4. Saves matched events to `obs/FINAL.obs`
 - **`add_temp_picks.py`** (optional, run after): augments `obs/FINAL.obs` with picks from external sources → `obs/FINAL_augmented.obs`
 
@@ -99,8 +99,9 @@ The root-level script **`add_temp_picks.py`** orchestrates the full pipeline (st
 - Following lines: one pick per station (station code, phase P/S, arrival time, uncertainties)
 
 ### NLL output
-- `.hyp` / `FINAL.txt` — relocated hypocenter parameters
-- Does **not** contain magnitude or full pick metadata → rematching to `.obs` is necessary
+- Per-zone CSV summary: `loc/GLOBAL_<N>/GLOBAL_<N>.obs.sum.grid0.loc.csv` — relocated hypocenter parameters including `publicId` (links back to the input `.obs` event), `pdfVolume` (location PDF volume; smaller = tighter), `errH`, `errZ`, etc.
+- Merged result: `RESULT/FINAL.csv` — deduplicated across all 6 zones
+- Does **not** contain magnitude or full pick metadata → rematching to `obs/GLOBAL.obs` via `publicId` is necessary
 
 ---
 
