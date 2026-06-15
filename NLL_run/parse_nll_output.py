@@ -1,6 +1,11 @@
 """
 parse_nll_output.py
 ============================
+DEPRECATED — no longer called by finalize_nll_catalog.py.
+
+NLL now outputs a CSV (SAVE_NLLOC_SUM) which is read directly by
+merge_regional_results.py. This hypo_71 parser is kept for reference only.
+
 Parse NonLinLoc hypo_71 output and write a plain-text result bulletin.
 
 Removes intermediate .hdr files from the NLL output folder, then reads the
