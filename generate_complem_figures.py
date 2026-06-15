@@ -67,14 +67,14 @@ def run_pipeline():
 
     # 3. Depth maps
     gen_depth(DepthMapsParams(
-        file       = os.path.join(_RESULT, 'FINAL.txt'),
+        file       = os.path.join(_RESULT, 'FINAL.csv'),
         mapFolder  = os.path.join(_FIGS, 'depth_maps') + os.sep,
         time_range = 5,
     ))
 
     # 4. Error maps
     gen_error(ErrorMapsParams(
-        file       = os.path.join(_RESULT, 'FINAL.txt'),
+        file       = os.path.join(_RESULT, 'FINAL.csv'),
         mapFolder  = os.path.join(_FIGS, 'error_maps') + os.sep,
         time_range = 5,
     ))

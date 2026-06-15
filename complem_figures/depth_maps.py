@@ -10,7 +10,7 @@ cores and saved as PDFs in the output folder.
 Usage
 -----
     python complem_figures/depth_maps.py \\
-        --file        RESULT/FINAL.txt \\
+        --file        RESULT/FINAL.csv \\
         --map-folder  complem_figures/depth_maps/ \\
         --time-range  5
 """
@@ -213,7 +213,7 @@ def main():
         description='Generate per-period depth maps from an NLL result file.'
     )
     parser.add_argument('--file',       required=True,
-                        help='NLL result file (e.g. RESULT/FINAL.txt)')
+                        help='NLL result file (e.g. RESULT/FINAL.csv)')
     parser.add_argument('--map-folder', required=True,
                         help='Output folder for PDF figures')
     parser.add_argument('--time-range', type=int, default=5,
