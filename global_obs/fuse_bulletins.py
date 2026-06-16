@@ -1060,7 +1060,7 @@ def find_and_merge_doubles(parameters, log_dir=None):
                 current['blank'].append(line)
                 events.append(current)
                 current = None
-        else:
+        elif not line.startswith('PUBLIC_ID'):
             if current is not None:
                 current['phases'].append(line.rstrip('\n'))
 
@@ -1288,7 +1288,8 @@ def find_and_merge_doubles(parameters, log_dir=None):
     logger.info(f"Doubles resolved: {n_dropped} event(s) removed, "
                 f"{n_merged} phase(s) merged across {len(merge_map)} event(s)")
 
-    _save_bulletin(updated, parameters)
+    with open(parameters.global_bulletin_path, 'w') as f:
+        f.writelines(updated)
     return {'output': parameters.global_bulletin_path}
 
 
