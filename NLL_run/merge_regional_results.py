@@ -116,7 +116,7 @@ def merge_bulletins(csv_files, output_path, log_dir=None):
 
     frames = []
     for path in csv_files:
-        df = pd.read_csv(path)
+        df = pd.read_csv(path, skipinitialspace=True)
         df['_source'] = os.path.basename(os.path.dirname(path))
         frames.append(df)
         logger.info(f"Loaded {len(df):>5d} events from {path!r}")
