@@ -138,8 +138,10 @@ def _update_bulletin(lines, final_df, public_id_index):
         mag_type   = orig_parts[10]
         mag_author = orig_parts[11]
 
-        # Parse NLL datetime (full ISO — no ambiguity)
-        dt       = pd.to_datetime(row['date-time'])
+        # Parse NLL datetime; round to centisecond to avoid sec_frac formatting
+        # to "60.00" when microseconds are >= 995000 (e.g. 59.997s → 60.00s).
+        # pd.Timestamp.round() rolls the overflow into the next minute correctly.
+        dt       = pd.to_datetime(row['date-time']).round('10ms')
         sec_frac = dt.second + dt.microsecond / 1e6
 
         # Build updated event header with NLL coords + original magnitude
