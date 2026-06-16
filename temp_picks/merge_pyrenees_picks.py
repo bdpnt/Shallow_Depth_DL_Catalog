@@ -98,7 +98,7 @@ def merge_all(input_dir=None, output_dir=None, log_dir=None):
         Defaults to temp_picks/all_picks/PICKS_PHASENET_TOUS/.
     output_dir : str, optional
         Directory where merged .txt files are written.
-        Defaults to temp_picks/all_picks/.
+        Defaults to temp_picks/pick_files/.
     log_dir : str, optional
         Directory for the log file. Defaults to temp_picks/console_output/.
 

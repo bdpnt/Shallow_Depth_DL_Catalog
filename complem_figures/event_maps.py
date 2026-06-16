@@ -90,8 +90,8 @@ def _remove_high_err(df):
 
 def generate_figure(parameters):
     """
-    Read a .txt or .obs bulletin, filter high-error events, and save a
-    PyGMT map coloured by depth.
+    Read a .csv (NLL result), .obs, or legacy .txt bulletin, filter
+    high-error events, and save a PyGMT map coloured by depth.
 
     Parameters
     ----------

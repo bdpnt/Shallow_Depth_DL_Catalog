@@ -1,6 +1,6 @@
 # PATTERNS.md — Python Coding Conventions
 
-This file documents the coding conventions used throughout the Seisbench2025 project. Follow these patterns when writing new Python scripts.
+This file documents the coding conventions used throughout the Shallow_Depth_DL_Catalog project. Follow these patterns when writing new Python scripts.
 
 ---
 

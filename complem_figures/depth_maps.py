@@ -4,8 +4,8 @@ depth_maps.py
 Generate per-period depth maps from an NLL result file.
 
 For each time window, computes a windowed-median depth grid and overlays the
-raw event scatter. Figures are produced in parallel using all available CPU
-cores and saved as PDFs in the output folder.
+raw event scatter. Figures are produced in parallel across multiple CPU cores
+and saved as PDFs in the output folder.
 
 Usage
 -----
