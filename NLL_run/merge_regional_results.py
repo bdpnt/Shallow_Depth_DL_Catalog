@@ -23,6 +23,7 @@ import os
 import sys
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 
 # ---------------------------------------------------------------------------
@@ -51,6 +52,42 @@ def _setup_logger(log_dir):
     handler.setFormatter(logging.Formatter('%(levelname)s %(message)s'))
     logger.addHandler(handler)
     return log_path
+
+
+# ---------------------------------------------------------------------------
+# Ellipsoid helpers — compute true ERZ from NLLoc confidence ellipsoid axes
+# ---------------------------------------------------------------------------
+
+def _ellipsoid_axis_to_xyz(az_deg, dip_deg, length):
+    """Convert a NLLoc ellipsoid semi-axis to a 3D vector [East, North, Down]."""
+    az  = np.radians(az_deg)
+    dip = np.radians(dip_deg)
+    return np.array([
+        length * np.cos(dip) * np.sin(az),   # East
+        length * np.cos(dip) * np.cos(az),   # North
+        length * np.sin(dip),                 # Down
+    ])
+
+
+def _compute_true_erz(az1, dip1, len1, az2, dip2, len2, len3):
+    """
+    Vertical semi-extent of the NLLoc 68% confidence ellipsoid.
+
+    Equivalent to HYPO71 ERZ. Falls back to EllipsoidLen3 on degenerate input.
+    """
+    try:
+        v1 = _ellipsoid_axis_to_xyz(az1, dip1, len1)
+        v2 = _ellipsoid_axis_to_xyz(az2, dip2, len2)
+        v3_dir = np.cross(v1 / len1, v2 / len2)
+        norm = np.linalg.norm(v3_dir)
+        if norm < 1e-10:
+            raise ValueError("degenerate ellipsoid")
+        v3 = v3_dir / norm * len3
+        R  = np.column_stack([v1, v2, v3])
+        C  = R @ R.T
+        return float(np.sqrt(C[2, 2]))
+    except Exception:
+        return float(len3)
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +144,15 @@ def merge_bulletins(csv_files, output_path, log_dir=None):
     best_idx = all_events.groupby('publicId')['pdfVolume'].idxmin()
     merged   = all_events.loc[best_idx].copy()
     n_dup    = n_total - len(merged)
+
+    # Compute true ERZ from ellipsoid axes (equivalent to HYPO71 ERZ)
+    merged['true_erz'] = merged.apply(
+        lambda r: _compute_true_erz(
+            r['EllipsoidAz1'], r['EllipsoidDip1'], r['EllipsoidLen1'],
+            r['EllipsoidAz2'], r['EllipsoidDip2'], r['EllipsoidLen2'],
+            r['EllipsoidLen3'],
+        ), axis=1
+    )
 
     merged = merged.sort_values('date-time').drop(columns='_source')
 
