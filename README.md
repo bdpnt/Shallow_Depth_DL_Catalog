@@ -1,4 +1,4 @@
-# Seisbench2025
+# Shallow_Depth_DL_Catalog
 
 A pipeline for building a unified, publication-quality earthquake catalog for the **Pyrenees region** (lat 41–45°N, lon -3 to 4°E), integrating data from five independent seismic networks over the period **1978–2025**.
 
@@ -34,14 +34,14 @@ Five seismic catalogs are integrated:
 | LDG | French seismological bulletin | Text | 2020–2025 |
 | OMP | Pyrenean Observatory | Text / .mag | 1978–2019 |
 
-All catalogs are converted to a common `.obs` format, magnitudes are harmonized to **ML**, and events are merged into a single `GLOBAL.obs` bulletin. Earthquakes are then relocated using **NonLinLoc** across 6 geographic sub-zones, and final results are compiled into `RESULT/FINAL.csv` and `obs/FINAL.obs`.
+All catalogs are converted to a common `.obs` format, magnitudes are harmonized to a common **ML (LDG)** scale, and events are merged into a single `GLOBAL.obs` bulletin. Earthquakes are then relocated using **NonLinLoc** across 6 geographic sub-zones, and final results are compiled into `RESULT/FINAL.csv` and `obs/FINAL.obs`.
 
 ---
 
 ## Project Structure
 
 ```
-Seisbench2025/
+Shallow_Depth_DL_Catalog/
 │
 ├── fetch_all_bulletins.py        # Entry point: fetch & convert all catalogs
 ├── build_global_inventory.py     # Entry point: fuse all station inventories
@@ -50,7 +50,9 @@ Seisbench2025/
 ├── generate_nll_corrections.py   # Entry point: prepare second-pass NLL run files
 ├── finalize_nll_catalog.py       # Entry point: compile and match final catalog
 ├── add_temp_picks.py             # Entry point: augment FINAL.obs with external picks
-├── run_gamma_detection.py        # Entry point: run GAMMA phase detection
+├── generate_complem_figures.py   # Entry point: matplotlib figures (seisbench_env)
+├── generate_complem_maps.py      # Entry point: PyGMT event maps (pygmt_env)
+├── run_gamma_detection.py        # Entry point: standalone PhaseNet/GaMMA detection
 │
 ├── fetch_obs/                # Catalog fetching & .obs conversion modules
 │   ├── RESIF.py
@@ -88,8 +90,11 @@ Seisbench2025/
 │   ├── event_maps.py
 │   ├── depth_maps.py
 │   ├── error_maps.py
+│   ├── depth_histogram.py
+│   ├── gutenberg_richter.py
 │   ├── cross_section.py
-│   └── gutenberg_richter.py
+│   ├── station_map.py
+│   └── zone_map.py
 │
 ├── zone_Arette/              # Focused analysis of the Arette seismic zone
 │
@@ -176,8 +181,8 @@ Runs the following steps in sequence:
 | Step | Module | Function | Description |
 |------|--------|----------|-------------|
 | 1 | `remap_picks_to_unified_codes.py` | `remap_picks_to_unified_codes()` | Associates picks with unified station codes from global inventory |
-| 2 | `generate_magnitude_models.py` | `convert_magnitudes()` | Builds ODR regression models: MLv→ML, mb_Lg→ML, ML(ICGC)→ML |
-| 3 | `apply_magnitude_models.py` | `apply_magnitude_models()` | Applies magnitude models to all `.obs` files |
+| 2 | `generate_magnitude_models.py` | `convert_magnitudes()` | Builds piecewise ODR regression models (breakpoint at M=2): MLv RESIF, mb_Lg IGN, ML ICGC → ML LDG |
+| 3 | `apply_magnitude_models.py` | `apply_magnitude_models()` | Applies the models to convert all `.obs` magnitudes to ML LDG |
 | 4 | `filter_events_by_aoi.py` | `filter_events_by_aoi()` | Removes events outside the area of interest |
 | 5 | `fuse_bulletins.py` | `find_and_merge_doubles()` | Deduplicates each source catalog individually before fusion |
 | 6 | `fuse_bulletins.py` | `fuse_bulletins()` | Matches and merges all cleaned catalogs into `GLOBAL.obs` |
@@ -237,7 +242,7 @@ Called automatically by `generate_nll_corrections.py` at the end of the second-p
 **Modules:** `NLL_run/merge_regional_results.py`, `NLL_run/match_pre_post_relocation.py`
 
 1. Cleans up `.hdr` files left by NLL in each `loc/GLOBAL_<N>/` folder.
-2. Reads the 6 per-zone NLL CSV summaries (`loc/GLOBAL_<N>/GLOBAL_<N>.obs.sum.grid0.loc.csv`), deduplicates events that appear in multiple overlapping zones (kept: lowest `pdfVolume`), and writes → `RESULT/FINAL.csv`.
+2. Reads the 6 per-zone NLL CSV summaries (`loc/GLOBAL_<N>/GLOBAL_<N>.obs.sum.grid0.loc.csv`), deduplicates events that appear in multiple overlapping zones (kept: lowest `pdfVolume`), and writes → `RESULT/FINAL.csv`. True horizontal/vertical errors (`true_erh` / `true_erz`) are derived from the 3-D confidence ellipsoid.
 3. Rematches relocated events back to `obs/GLOBAL.obs` via the `publicId` field to recover metadata absent from NLL output (magnitude, pick details, etc.).
 4. Saves matched events → `obs/FINAL.obs`
 
@@ -245,15 +250,24 @@ Called automatically by `generate_nll_corrections.py` at the end of the second-p
 
 ## Complementary Analysis
 
-Scripts in `complem_figures/` for post-processing visualization:
+Two driver scripts run the `complem_figures/` modules in **different conda environments**:
+- `generate_complem_figures.py` (`seisbench_env`) — matplotlib figures: depth histograms, Gutenberg-Richter distributions, and per-period depth and error maps
+- `generate_complem_maps.py` (`pygmt_env`) — PyGMT event maps for each of the 6 NLL zones and the final catalog
+
+Each module can also be run standalone:
 
 | Script | Description |
 |--------|-------------|
 | `event_maps.py` | Geographic maps of seismicity (from `.obs`, `.txt`, or `.csv` NLL summary) |
-| `depth_maps.py` | Depth distribution maps |
-| `error_maps.py` | Spatial distribution of location uncertainties (ERH, ERV) |
-| `cross_section.py` | Vertical cross-sections of seismicity |
+| `depth_maps.py` | Per-period windowed-median depth maps |
+| `error_maps.py` | Per-period spatial distribution of location uncertainties (ERH, ERV) |
+| `depth_histogram.py` | Histogram of event depths |
 | `gutenberg_richter.py` | Magnitude-frequency distribution (Gutenberg-Richter law) |
+| `cross_section.py` | Vertical cross-sections of seismicity |
+| `station_map.py` | Map of seismic stations |
+| `zone_map.py` | Overview map of the 6 NLL relocation zones |
+
+Map modules apply a quality filter (erh ≤ 3 km, erv ≤ 3 km, gap ≤ 300°, rms ≤ 0.5 s) by default; use `--no-filter` for pre-relocation catalogs where errors are unavailable.
 
 `zone_Arette/` contains a focused analysis of the Arette seismic zone, including gap/RMS statistics across different station distance cutoffs and yearly temporal analysis.
 
@@ -282,7 +296,9 @@ Scripts in `temp_picks/` implement a self-contained sub-pipeline for ingesting p
 | `obspy` | Seismic data I/O, FDSN client, inventory management |
 | `pandas`, `numpy` | Data manipulation |
 | `scipy` | ODR regression, spatial queries (KDTree), statistics |
+| `scikit-learn` | Regression diagnostics (R²) for magnitude models |
 | `matplotlib`, `seaborn` | Plotting |
+| `xarray` | Grid handling for cross-sections |
 | `pygmt` | Geographic maps (requires separate `pygmt_env` conda environment) |
 | `joblib` | Magnitude model serialization |
 | `requests` | ICGC catalog fetching |

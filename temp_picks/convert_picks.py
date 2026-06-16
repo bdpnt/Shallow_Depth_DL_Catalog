@@ -1,9 +1,9 @@
 """
 convert_picks.py
 ============================
-Pick file format converter for the Seisbench2025 project.
+Pick file format converter for the Shallow_Depth_DL_Catalog project.
 
-Reads a pick file from Pyrocko/pick_files/, strips all non-pick lines (event
+Reads a pick file from temp_picks/pick_files/, strips all non-pick lines (event
 headers, blanks), maps station codes to the project's internal codes using
 stations/GLOBAL_code_map.txt, and writes pick-only output in the obs/GLOBAL.obs
 pick line format.

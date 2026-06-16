@@ -18,8 +18,7 @@ Usage
         --loose-dist-thresh    30 \
         --time-thresh          2 \
         --loose-time-thresh    10 \
-        --mag-thresh           1.5 \
-        --sim-pick-thresh      2
+        --mag-thresh           1.5
 
     # Interactive duplicate resolution
     python global_obs/fuse_bulletins.py --mode doubles \
