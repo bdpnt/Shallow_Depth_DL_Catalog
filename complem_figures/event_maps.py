@@ -138,7 +138,7 @@ def generate_figure(parameters):
             events_df = _remove_high_err(events_df)
 
     elif ext == 'csv':
-        df = pd.read_csv(parameters.fileBulletin)
+        df = pd.read_csv(parameters.fileBulletin, skipinitialspace=True)
         print(f"Catalog read @ {parameters.fileBulletin}")
         events_df = df.rename(columns={
             'latitude':  'Latitude',
