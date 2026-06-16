@@ -1,8 +1,8 @@
-# CLAUDE.md — Seisbench2025
+# CLAUDE.md — Shallow_Depth_DL_Catalog
 
 ## Project Overview
 
-Seisbench2025 is an earthquake catalog processing and relocation pipeline focused on the **Pyrenees region** (latitude 41–45°N, longitude -3 to 4°E), covering seismicity from **1978 to 2025**.
+Shallow_Depth_DL_Catalog is an earthquake catalog processing and relocation pipeline focused on the **Pyrenees region** (latitude 41–45°N, longitude -3 to 4°E), covering seismicity from **1978 to 2025**.
 
 The goal is to produce a unified, publication-quality earthquake catalog with harmonized magnitudes and improved hypocenter locations, by integrating data from 5 independent seismic networks.
 
@@ -29,8 +29,10 @@ The workflow follows 5 main stages:
   1. **remap_picks_to_unified_codes.py** — associates picks with unified station codes
   2. **generate_magnitude_models.py** — builds regression models to convert all magnitude types to ML
   3. **apply_magnitude_models.py** — applies the models to all `.obs` files
-  4. **fuse_bulletins.py** — spatially/temporally merges all catalogs into `obs/GLOBAL.obs`
-  5. **plot_global_catalog_map.py** — generates a map of the merged catalog
+  4. **filter_events_by_aoi.py** — filters each source bulletin to the area of interest (run in `pygmt_env`)
+  5. **fuse_bulletins.find_and_merge_doubles** — de-duplicates each source catalog individually before fusion (1 s / 50 km)
+  6. **fuse_bulletins.py** — spatially/temporally merges all catalogs into `obs/GLOBAL.obs`
+  7. **plot_global_catalog_map.py** — generates a map of the merged catalog
 - Matching thresholds: strict 15 km / 2 s / 1.5 mag units; loose 50 km / 30 s confirmed by ≥1 shared P-phase pick
 
 ### 4. Earthquake Relocation (NonLinLoc)
@@ -62,8 +64,11 @@ Scripts in `complem_figures/` for visualization and statistics:
 - `event_maps.py` — geographic maps of seismicity
 - `gutenberg_richter.py` — magnitude-frequency distribution
 - `depth_maps.py` — depth distribution
+- `depth_histogram.py` — histogram of event depths
 - `error_maps.py` — location uncertainty maps
 - `cross_section.py` — vertical cross-sections
+- `station_map.py` — map of seismic stations
+- `zone_map.py` — overview map of the 6 NLL zones
 
 > **Environments**:
 > - `seisbench_env` → `generate_complem_figures.py` (Gutenberg-Richter, depth maps, error maps)
@@ -99,8 +104,8 @@ The root-level script **`add_temp_picks.py`** orchestrates the full pipeline (st
 - Following lines: one pick per station (station code, phase P/S, arrival time, uncertainties)
 
 ### NLL output
-- Per-zone CSV summary: `loc/GLOBAL_<N>/GLOBAL_<N>.obs.sum.grid0.loc.csv` — relocated hypocenter parameters including `publicId` (links back to the input `.obs` event), `pdfVolume` (location PDF volume; smaller = tighter), `errH`, `errZ`, etc.
-- Merged result: `RESULT/FINAL.csv` — deduplicated across all 6 zones
+- Per-zone CSV summary: `loc/GLOBAL_<N>/GLOBAL_<N>.obs.sum.grid0.loc.csv` — relocated hypocenter parameters including `publicId` (links back to the input `.obs` event), `pdfVolume` (location PDF volume; smaller = tighter), the confidence-ellipsoid axes, etc.
+- Merged result: `RESULT/FINAL.csv` — deduplicated across all 6 zones; horizontal/vertical uncertainties `true_erh` / `true_erz` are derived from the 3-D confidence ellipsoid (not axis-aligned `errH`/`errZ` projections)
 - Does **not** contain magnitude or full pick metadata → rematching to `obs/GLOBAL.obs` via `publicId` is necessary
 
 ---
