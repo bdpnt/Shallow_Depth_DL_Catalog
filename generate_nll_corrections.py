@@ -4,7 +4,7 @@ generate_nll_corrections.py
 Generate second-pass NLL run files with per-station delay corrections.
 
 For each of the 6 geographic zones:
-  1. Cleans the first-pass NLL output and writes events to RESULT/GLOBAL_<key>.txt.
+  1. Removes .hdr files left by NLL in the loc/GLOBAL_<key>/ folder.
   2. Derives per-station delay corrections from first-pass residuals and appends
      them to a second-pass run file (run_<key>_PR.in).
 
@@ -21,7 +21,7 @@ Usage
 import glob
 import os
 
-from NLL_run.append_station_delays import SecondRunParams
+from NLL_run.append_station_delays import SecondRunParams, append_station_delays
 from NLL_run.export_locdelay_info  import export_locdelay_info
 
 # ---------------------------------------------------------------------------
@@ -54,7 +54,7 @@ def run_pipeline():
             minPhases     = 100,  # minimal number of phases for the delay to be used
         )
 
-        NLL_run.append_station_delays.append_station_delays(params_ssst_W)
+        append_station_delays(params_ssst_W)
 
     # Export the locdelays
     export_locdelay_info(
