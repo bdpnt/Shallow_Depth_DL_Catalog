@@ -25,6 +25,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+from scipy.stats import chi2 as chi2dist
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -68,26 +69,25 @@ def _ellipsoid_axis_to_xyz(az_deg, dip_deg, length):
         length * np.sin(dip),                 # Down
     ])
 
+def _build_covariance(az1, dip1, len1, az2, dip2, len2, len3):
+    """
+    Build the pure 1-sigma covariance matrix from NLLoc ellipsoid axes.
+    Strips the 3D chi² scaling baked into the stored axis lengths.
+    """
+    _CHI2_3D_68 = chi2dist.ppf(0.68, df=3)
+    v1 = _ellipsoid_axis_to_xyz(az1, dip1, len1)
+    v2 = _ellipsoid_axis_to_xyz(az2, dip2, len2)
+    v3_dir = np.cross(v1 / len1, v2 / len2)
+    v3 = v3_dir / np.linalg.norm(v3_dir) * len3
+    R = np.column_stack([v1, v2, v3])
+    return R @ R.T / _CHI2_3D_68
 
 def _compute_true_erz(az1, dip1, len1, az2, dip2, len2, len3):
     """
     Vertical semi-extent of the NLLoc 68% confidence ellipsoid.
-
-    Equivalent to HYPO71 ERZ. Falls back to EllipsoidLen3 on degenerate input.
     """
-    try:
-        v1 = _ellipsoid_axis_to_xyz(az1, dip1, len1)
-        v2 = _ellipsoid_axis_to_xyz(az2, dip2, len2)
-        v3_dir = np.cross(v1 / len1, v2 / len2)
-        norm = np.linalg.norm(v3_dir)
-        if norm < 1e-10:
-            raise ValueError("degenerate ellipsoid")
-        v3 = v3_dir / norm * len3
-        R  = np.column_stack([v1, v2, v3])
-        C  = R @ R.T
-        return float(np.sqrt(C[2, 2]))
-    except Exception:
-        return float(len3)
+    C = _build_covariance(az1, dip1, len1, az2, dip2, len2, len3)
+    return float(np.sqrt(C[2, 2]))
 
 
 # ---------------------------------------------------------------------------
