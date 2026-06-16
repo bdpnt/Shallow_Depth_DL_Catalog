@@ -108,11 +108,11 @@ def _update_bulletin(lines, final_df, public_id_index):
 
     Returns
     -------
-    (list[str], int, int) — updated lines, n_matched, n_dropped
+    (list[str], int, int) — updated lines, n_matched, n_orphan_csv
     """
-    output    = []
-    n_matched = 0
-    n_dropped = 0
+    output        = []
+    n_matched     = 0
+    n_orphan_csv  = 0
 
     # Preserve file header (### lines + following blank line)
     i = 0
@@ -127,7 +127,7 @@ def _update_bulletin(lines, final_df, public_id_index):
         pid = str(row['publicId'])
         if pid not in public_id_index:
             logger.warning(f"publicId {pid!r} not found in obs bulletin — skipping")
-            n_dropped += 1
+            n_orphan_csv += 1
             continue
 
         header_idx = public_id_index[pid]
@@ -160,7 +160,7 @@ def _update_bulletin(lines, final_df, public_id_index):
         output.append('\n')
         n_matched += 1
 
-    return output, n_matched, n_dropped
+    return output, n_matched, n_orphan_csv
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ def save_bulletin(parameters, log_dir=None):
     final_df = pd.read_csv(parameters.file_final)
     logger.info(f"Events in NLL CSV          : {len(final_df)}")
 
-    updated, n_matched, n_dropped = _update_bulletin(lines, final_df, public_id_index)
+    updated, n_matched, n_orphan_csv = _update_bulletin(lines, final_df, public_id_index)
 
     parent = os.path.dirname(parameters.save_file)
     if parent:
@@ -202,8 +202,10 @@ def save_bulletin(parameters, log_dir=None):
     with open(parameters.save_file, 'w') as f:
         f.writelines(updated)
 
-    logger.info(f"Matched  : {n_matched}")
-    logger.info(f"Dropped  : {n_dropped} (no NLL solution)")
+    n_no_nll = len(public_id_index) - n_matched
+    logger.info(f"Matched                       : {n_matched}")
+    logger.info(f"Obs events without NLL solution (not in FINAL.obs): {n_no_nll}")
+    logger.info(f"NLL rows with no matching obs event (skipped)      : {n_orphan_csv}")
 
     return {
         'output':    parameters.save_file,
