@@ -34,7 +34,7 @@ Five seismic catalogs are integrated:
 | LDG | French seismological bulletin | Text | 2020–2025 |
 | OMP | Pyrenean Observatory | Text / .mag | 1978–2019 |
 
-All catalogs are converted to a common `.obs` format, magnitudes are harmonized to **ML**, and events are merged into a single `GLOBAL.obs` bulletin. Earthquakes are then relocated using **NonLinLoc** across 6 geographic sub-zones, and final results are compiled into `RESULT/FINAL.txt` and `obs/FINAL.obs`.
+All catalogs are converted to a common `.obs` format, magnitudes are harmonized to **ML**, and events are merged into a single `GLOBAL.obs` bulletin. Earthquakes are then relocated using **NonLinLoc** across 6 geographic sub-zones, and final results are compiled into `RESULT/FINAL.csv` and `obs/FINAL.obs`.
 
 ---
 
@@ -79,7 +79,7 @@ Seisbench2025/
 │   ├── generate_regional_runfiles.py
 │   ├── append_station_delays.py
 │   ├── export_locdelay_info.py
-│   ├── parse_nll_output.py
+│   ├── parse_nll_output.py          (deprecated)
 │   ├── filter_distant_picks.py
 │   ├── match_pre_post_relocation.py
 │   └── merge_regional_results.py
@@ -112,7 +112,7 @@ Seisbench2025/
 ├── stations/                 # Station inventories (XML + unified)
 ├── run/                      # NLL run configuration files (.in)
 ├── loc/                      # NLL output files per zone
-├── RESULT/                   # Parsed relocation results (.txt)
+├── RESULT/                   # Merged relocation results (.csv)
 ├── model/                    # Velocity model grids (NLL)
 ├── time/                     # Travel time grids (NLL)
 └── MAGMODELS/                # Saved magnitude conversion models
@@ -214,7 +214,7 @@ NLLoc run/run_<N>.in
 #### Second pass — `generate_nll_corrections.py`
 
 For each zone, this script does two things:
-1. Cleans the first-pass NLL output and writes the parsed events to `RESULT/GLOBAL_<N>.txt`.
+1. Cleans up `.hdr` files left by NLL in the `loc/GLOBAL_<N>/` folder.
 2. Reads per-station average residuals (LOCDELAY entries) from the first run and appends qualifying station delay corrections to generate second-pass run files `run/run_<N>_PR.in`.
 
 Run NLL again:
@@ -234,11 +234,11 @@ Called automatically by `generate_nll_corrections.py` at the end of the second-p
 ### 5. Post-relocation Processing
 
 **Script:** `finalize_nll_catalog.py`  
-**Modules:** `NLL_run/parse_nll_output.py`, `NLL_run/merge_regional_results.py`, `NLL_run/match_pre_post_relocation.py`
+**Modules:** `NLL_run/merge_regional_results.py`, `NLL_run/match_pre_post_relocation.py`
 
-1. Parses NLL `.hypo_71` output files for each zone → `RESULT/GLOBAL_<N>_PR.txt`
-2. Merges all 6 regional results → `RESULT/FINAL.txt`
-3. Rematches relocated events back to `obs/GLOBAL.obs` to recover metadata absent from NLL output (magnitude, pick details, etc.)
+1. Cleans up `.hdr` files left by NLL in each `loc/GLOBAL_<N>/` folder.
+2. Reads the 6 per-zone NLL CSV summaries (`loc/GLOBAL_<N>/GLOBAL_<N>.obs.sum.grid0.loc.csv`), deduplicates events that appear in multiple overlapping zones (kept: lowest `pdfVolume`), and writes → `RESULT/FINAL.csv`.
+3. Rematches relocated events back to `obs/GLOBAL.obs` via the `publicId` field to recover metadata absent from NLL output (magnitude, pick details, etc.).
 4. Saves matched events → `obs/FINAL.obs`
 
 ---
@@ -249,7 +249,7 @@ Scripts in `complem_figures/` for post-processing visualization:
 
 | Script | Description |
 |--------|-------------|
-| `event_maps.py` | Geographic maps of seismicity (from `.obs` or `.txt`) |
+| `event_maps.py` | Geographic maps of seismicity (from `.obs`, `.txt`, or `.csv` NLL summary) |
 | `depth_maps.py` | Depth distribution maps |
 | `error_maps.py` | Spatial distribution of location uncertainties (ERH, ERV) |
 | `cross_section.py` | Vertical cross-sections of seismicity |

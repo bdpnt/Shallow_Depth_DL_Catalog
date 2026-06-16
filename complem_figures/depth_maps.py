@@ -10,7 +10,7 @@ cores and saved as PDFs in the output folder.
 Usage
 -----
     python complem_figures/depth_maps.py \\
-        --file        RESULT/FINAL.txt \\
+        --file        RESULT/FINAL.csv \\
         --map-folder  complem_figures/depth_maps/ \\
         --time-range  5
 """
@@ -24,7 +24,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from obspy import UTCDateTime
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -51,29 +50,20 @@ class DepthMapsParams:
 
 def _read_file(file):
     """
-    Parse an NLL result file into a DataFrame.
+    Parse RESULT/FINAL.csv into a DataFrame.
 
     Parameters
     ----------
-    file : str — path to the NLL result bulletin
+    file : str — path to the merged NLL CSV (RESULT/FINAL.csv)
 
     Returns
     -------
     pd.DataFrame with columns: date, latitude, longitude, depth, time
     """
-    with open(file, 'r') as f:
-        lines = f.readlines()
-
-    events = []
-    for line in lines:
-        infos     = line.split()
-        year      = '19' + infos[0].rjust(2, '0') if float(infos[0]) > 75 else '20' + infos[0].rjust(2, '0')
-        date      = UTCDateTime(f'{year}-{infos[1]}-{infos[2]}T00:00:00.00Z')
-        events.append([date, float(infos[6]), float(infos[7]), float(infos[8])])
-
-    df         = pd.DataFrame(events, columns=['date', 'latitude', 'longitude', 'depth'])
-    df['time'] = df['date'].apply(lambda x: pd.Timestamp(x.datetime))
-    return df
+    df         = pd.read_csv(file)
+    df['date'] = pd.to_datetime(df['date-time'])
+    df['time'] = df['date']
+    return df[['date', 'latitude', 'longitude', 'depth', 'time']]
 
 
 def _filter_dates(events, time_range):
@@ -223,7 +213,7 @@ def main():
         description='Generate per-period depth maps from an NLL result file.'
     )
     parser.add_argument('--file',       required=True,
-                        help='NLL result file (e.g. RESULT/FINAL.txt)')
+                        help='NLL result file (e.g. RESULT/FINAL.csv)')
     parser.add_argument('--map-folder', required=True,
                         help='Output folder for PDF figures')
     parser.add_argument('--time-range', type=int, default=5,

@@ -203,7 +203,7 @@ def remap_picks_to_unified_codes(parameters, log_dir=None):
         new_bulletin = []
 
         for line in lines_bulletin:
-            if not line.startswith('#') and line != '\n':
+            if not line.startswith('#') and line != '\n' and not line.startswith('PUBLIC_ID'):
                 org_length += 1
                 code_line = _find_code(line, unique_sta)
                 if code_line not in (None, False):

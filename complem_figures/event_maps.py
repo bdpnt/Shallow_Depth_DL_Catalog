@@ -3,9 +3,9 @@ event_maps.py
 ============================
 Generate a PyGMT map of seismic events coloured by depth.
 
-Reads a .txt (NLL result) or .obs bulletin, optionally filters high-error
-events, and plots each event on a Pyrenees basemap coloured by depth.
-Optionally overlays station positions and zone-boundary rectangles.
+Reads a .csv (NLL result), .obs, or legacy .txt bulletin, optionally filters
+high-error events, and plots each event on a Pyrenees basemap coloured by
+depth. Optionally overlays station positions and zone-boundary rectangles.
 
 Quality filter (erh ≤ 3 km, erv ≤ 3 km, gap ≤ 300°, rms ≤ 0.5 s) is applied
 by default. Use --no-filter to skip it (e.g. for pre-relocation .obs files
@@ -25,10 +25,10 @@ Usage
         --bulletin  obs/FINAL.obs \\
         --output    complem_figures/event_maps/FINAL.pdf
 
-    # .txt result with stations and zone boxes
+    # .csv NLL result with stations and zone boxes
     python complem_figures/event_maps.py \\
-        --bulletin   RESULT/GLOBAL_1_PR.txt \\
-        --output     complem_figures/event_maps/GLOBAL_1_PR.pdf \\
+        --bulletin   loc/GLOBAL_1/GLOBAL_1.obs.sum.grid0.loc.csv \\
+        --output     complem_figures/event_maps/GLOBAL_1.pdf \\
         --stations   loc/GLOBAL_1/last.stations \\
         --region-in  42.50 -2.00 43.50 -0.75 \\
         --region-out 41.60 -3.22 44.40  0.46
@@ -134,6 +134,22 @@ def generate_figure(parameters):
             .replace('None', float('nan'))
             .astype(float)
         )
+        if not parameters.no_filter:
+            events_df = _remove_high_err(events_df)
+
+    elif ext == 'csv':
+        df = pd.read_csv(parameters.fileBulletin, skipinitialspace=True)
+        print(f"Catalog read @ {parameters.fileBulletin}")
+        events_df = df.rename(columns={
+            'latitude':  'Latitude',
+            'longitude': 'Longitude',
+            'depth':     'Depth',
+            'RMS':       'rms',
+            'true_erh':  'erh',
+            'true_erz':  'erv',
+            'Gap':       'gap',
+        })
+        events_df['Magnitude'] = float('nan')
         if not parameters.no_filter:
             events_df = _remove_high_err(events_df)
 

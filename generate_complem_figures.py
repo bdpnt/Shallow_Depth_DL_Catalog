@@ -9,8 +9,8 @@ Runs in order:
   1. Depth histograms (GLOBAL.obs and FINAL.obs)
   2. Gutenberg-Richter distribution (GLOBAL.obs — all events, ML and Mw)
   3. Gutenberg-Richter distribution (FINAL.obs — relocated events, ML and Mw)
-  4. Depth maps  per 5-year period (RESULT/FINAL.txt)
-  5. Error maps  per 5-year period (RESULT/FINAL.txt)
+  4. Depth maps  per 5-year period (RESULT/FINAL.csv)
+  5. Error maps  per 5-year period (RESULT/FINAL.csv)
 
 For PyGMT event maps, run generate_complem_maps.py with pygmt_env.
 
@@ -67,14 +67,14 @@ def run_pipeline():
 
     # 3. Depth maps
     gen_depth(DepthMapsParams(
-        file       = os.path.join(_RESULT, 'FINAL.txt'),
+        file       = os.path.join(_RESULT, 'FINAL.csv'),
         mapFolder  = os.path.join(_FIGS, 'depth_maps') + os.sep,
         time_range = 5,
     ))
 
     # 4. Error maps
     gen_error(ErrorMapsParams(
-        file       = os.path.join(_RESULT, 'FINAL.txt'),
+        file       = os.path.join(_RESULT, 'FINAL.csv'),
         mapFolder  = os.path.join(_FIGS, 'error_maps') + os.sep,
         time_range = 5,
     ))

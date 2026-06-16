@@ -4,23 +4,22 @@ finalize_nll_catalog.py
 Finalize the NLL-relocated catalog and produce obs/FINAL.obs.
 
 Steps:
-  1. Cleans second-pass NLL output for all 6 zones.
-  2. Merges the 6 regional results into RESULT/FINAL.txt.
-  3. Rematches relocated events back to obs/GLOBAL.obs to recover metadata
-     (e.g. magnitude) absent from NLL output.
-  4. Saves matched events to obs/FINAL.obs.
+  1. Removes .hdr files left by NLL in each zone's loc/ folder.
+  2. Merges the 6 zone CSV outputs into RESULT/FINAL.csv, resolving zone-overlap
+     duplicates by keeping the solution with the smallest pdfVolume.
+  3. Rematches relocated events back to obs/GLOBAL.obs via publicId to recover
+     magnitude and picks, and writes obs/FINAL.obs.
 
 Usage
 -----
     python finalize_nll_catalog.py
 """
 
+import glob
 import os
 
-from NLL_run.match_pre_post_relocation import MatchCatalogsParams
+from NLL_run.match_pre_post_relocation import MatchCatalogsParams, save_bulletin
 from NLL_run.merge_regional_results    import merge_bulletins
-from NLL_run.parse_nll_output          import CleanPostRunParams
-import NLL_run
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -37,30 +36,25 @@ _OBS    = os.path.join(_PROJECT_ROOT, 'obs')
 # ---------------------------------------------------------------------------
 
 def run_pipeline():
-    """Clean second-pass NLL output, merge results, and produce obs/FINAL.obs."""
-    # Clean the files post-run
+    """Remove .hdr files, merge zone CSVs, and produce obs/FINAL.obs."""
+    # Step 1: clean up .hdr files left by NLL in each zone folder
     for key in range(1, 7):
-        params_clean = CleanPostRunParams(
-            folderLoc    = os.path.join(_LOC,    f'GLOBAL_{key}'),
-            obsFile      = f'GLOBAL_{key}.obs',
-            fileBulletin = os.path.join(_RESULT, f'GLOBAL_{key}_PR.txt'),
-        )
+        for hdr in glob.glob(os.path.join(_LOC, f'GLOBAL_{key}', '*.hdr')):
+            os.remove(hdr)
 
-        NLL_run.parse_nll_output.write_events(params_clean)
+    # Step 2: merge all zone CSV outputs into RESULT/FINAL.csv
+    csv_files = [
+        os.path.join(_LOC, f'GLOBAL_{key}', f'GLOBAL_{key}.obs.sum.grid0.loc.csv')
+        for key in range(1, 7)
+    ]
+    merge_bulletins(csv_files, os.path.join(_RESULT, 'FINAL.csv'))
 
-    # Generate the FINAL.txt file
-    result_files = [os.path.join(_RESULT, f'GLOBAL_{key}_PR.txt') for key in range(1, 7)]
-
-    merge_bulletins(result_files, os.path.join(_RESULT, 'FINAL.txt'))
-
-    # Match events pre/post NLL
-    params_final = MatchCatalogsParams(
+    # Step 3: rematch to obs/GLOBAL.obs via publicId and write obs/FINAL.obs
+    save_bulletin(MatchCatalogsParams(
         file_obs   = os.path.join(_OBS, 'GLOBAL.obs'),
-        file_final = os.path.join(_RESULT, 'FINAL.txt'),
+        file_final = os.path.join(_RESULT, 'FINAL.csv'),
         save_file  = os.path.join(_OBS, 'FINAL.obs'),
-    )
-
-    NLL_run.match_pre_post_relocation.save_bulletin(params_final)
+    ))
 
 
 # ---------------------------------------------------------------------------

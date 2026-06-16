@@ -181,7 +181,7 @@ def _gen_gtsrce(parameters):
     unique_stations = {
         line.split()[0]
         for line in lines
-        if not (line.startswith('\n') or line.startswith('#'))
+        if not (line.startswith('\n') or line.startswith('#') or line.startswith('PUBLIC_ID'))
     }
 
     inventory         = read_inventory(parameters.fileInventory, format='STATIONXML')
@@ -321,7 +321,7 @@ def generate_run(parameters, log_dir=None):
 
     lines.append('# Bulletin to read and write\n')
     lines.append(f'LOCFILES {parameters.fileBulletinIn} NLLOC_OBS  {parameters.fileTime}  {parameters.fileBulletinOut}\n')
-    lines.append('LOCHYPOUT SAVE_HYPO71_SUM\n')
+    lines.append('LOCHYPOUT SAVE_NLLOC_SUM\n')
     lines.append('\n')
 
     lines.append('# Localization method\n')

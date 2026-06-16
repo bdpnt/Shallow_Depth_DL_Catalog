@@ -4,7 +4,7 @@ generate_nll_corrections.py
 Generate second-pass NLL run files with per-station delay corrections.
 
 For each of the 6 geographic zones:
-  1. Cleans the first-pass NLL output and writes events to RESULT/GLOBAL_<key>.txt.
+  1. Removes .hdr files left by NLL in the loc/GLOBAL_<key>/ folder.
   2. Derives per-station delay corrections from first-pass residuals and appends
      them to a second-pass run file (run_<key>_PR.in).
 
@@ -18,12 +18,11 @@ Usage
     python generate_nll_corrections.py
 """
 
+import glob
 import os
 
-from NLL_run.append_station_delays import SecondRunParams
+from NLL_run.append_station_delays import SecondRunParams, append_station_delays
 from NLL_run.export_locdelay_info  import export_locdelay_info
-from NLL_run.parse_nll_output      import CleanPostRunParams
-import NLL_run
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -43,14 +42,9 @@ _STATIONS = os.path.join(_PROJECT_ROOT, 'stations')
 def run_pipeline():
     """Clean first-pass NLL output and generate second-pass run files for all zones."""
     for key in range(1, 7):
-        # Clean the files post-run
-        params_clean = CleanPostRunParams(
-            folderLoc    = os.path.join(_LOC,    f'GLOBAL_{key}'),
-            obsFile      = f'GLOBAL_{key}.obs',
-            fileBulletin = os.path.join(_RESULT, f'GLOBAL_{key}.txt'),
-        )
-
-        NLL_run.parse_nll_output.write_events(params_clean)
+        # Clean up .hdr files left by NLL in the loc folder
+        for hdr in glob.glob(os.path.join(_LOC, f'GLOBAL_{key}', '*.hdr')):
+            os.remove(hdr)
 
         # Generate the second-pass run file
         params_ssst_W = SecondRunParams(
@@ -60,7 +54,7 @@ def run_pipeline():
             minPhases     = 100,  # minimal number of phases for the delay to be used
         )
 
-        NLL_run.append_station_delays.append_station_delays(params_ssst_W)
+        append_station_delays(params_ssst_W)
 
     # Export the locdelays
     export_locdelay_info(
