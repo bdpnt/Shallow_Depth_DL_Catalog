@@ -25,7 +25,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from scipy.stats import chi2 as chi2dist
+# from scipy.stats import chi2 as chi2dist
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -56,7 +56,7 @@ def _setup_logger(log_dir):
 
 
 # ---------------------------------------------------------------------------
-# Ellipsoid helpers — compute true ERZ from NLLoc confidence ellipsoid axes
+# Ellipsoid helpers — compute true ERH/ERZ from NLLoc confidence ellipsoid axes
 # ---------------------------------------------------------------------------
 
 def _ellipsoid_axis_to_xyz(az_deg, dip_deg, length):
@@ -71,23 +71,25 @@ def _ellipsoid_axis_to_xyz(az_deg, dip_deg, length):
 
 def _build_covariance(az1, dip1, len1, az2, dip2, len2, len3):
     """
-    Build the pure 1-sigma covariance matrix from NLLoc ellipsoid axes.
-    Strips the 3D chi² scaling baked into the stored axis lengths.
+    Build the covariance matrix of the NLLoc 3D confidence ellipsoid (R @ R.T).
+    The semi-axes are used as-is; no chi-squared rescaling is applied.
     """
-    _CHI2_3D_68 = chi2dist.ppf(0.68, df=3)
     v1 = _ellipsoid_axis_to_xyz(az1, dip1, len1)
     v2 = _ellipsoid_axis_to_xyz(az2, dip2, len2)
     v3_dir = np.cross(v1 / len1, v2 / len2)
     v3 = v3_dir / np.linalg.norm(v3_dir) * len3
     R = np.column_stack([v1, v2, v3])
-    return R @ R.T / _CHI2_3D_68
+    return R @ R.T
 
 def _compute_true_erz(az1, dip1, len1, az2, dip2, len2, len3):
-    """
-    Vertical semi-extent of the NLLoc 68% confidence ellipsoid.
-    """
+    """Maximum vertical extent of the NLLoc 3D confidence ellipsoid (km)."""
     C = _build_covariance(az1, dip1, len1, az2, dip2, len2, len3)
     return float(np.sqrt(C[2, 2]))
+
+def _compute_true_erh(az1, dip1, len1, az2, dip2, len2, len3):
+    """Maximum horizontal extent of the NLLoc 3D confidence ellipsoid (km)."""
+    C = _build_covariance(az1, dip1, len1, az2, dip2, len2, len3)
+    return float(np.sqrt(np.max(np.linalg.eigvalsh(C[:2, :2]))))
 
 
 # ---------------------------------------------------------------------------
@@ -145,13 +147,15 @@ def merge_bulletins(csv_files, output_path, log_dir=None):
     merged   = all_events.loc[best_idx].copy()
     n_dup    = n_total - len(merged)
 
-    # Compute true ERZ from ellipsoid axes (equivalent to HYPO71 ERZ)
+    # Compute true ERH/ERZ from the 3D confidence ellipsoid axes
+    _ell_args = ['EllipsoidAz1', 'EllipsoidDip1', 'EllipsoidLen1',
+                 'EllipsoidAz2', 'EllipsoidDip2', 'EllipsoidLen2',
+                 'EllipsoidLen3']
+    merged['true_erh'] = merged.apply(
+        lambda r: _compute_true_erh(*r[_ell_args]), axis=1
+    )
     merged['true_erz'] = merged.apply(
-        lambda r: _compute_true_erz(
-            r['EllipsoidAz1'], r['EllipsoidDip1'], r['EllipsoidLen1'],
-            r['EllipsoidAz2'], r['EllipsoidDip2'], r['EllipsoidLen2'],
-            r['EllipsoidLen3'],
-        ), axis=1
+        lambda r: _compute_true_erz(*r[_ell_args]), axis=1
     )
 
     merged = merged.sort_values('date-time').drop(columns='_source')

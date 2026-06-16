@@ -149,7 +149,7 @@ def _update_bulletin(lines, final_df, public_id_index):
             f"# {dt.year} {dt.month} {dt.day} {dt.hour} {dt.minute} {sec_frac:.2f} "
             f"{row['latitude']:.4f} {row['longitude']:.4f} {row['depth']:.2f} "
             f"{mag} {mag_type} {mag_author} "
-            f"{int(row['Nphs'])} {row['maxHorUnc']:.2f} {row['true_erz']:.2f} "
+            f"{int(row['Nphs'])} {row['true_erh']:.2f} {row['true_erz']:.2f} "
             f"{row['Gap']:.1f} {row['RMS']:.4f}\n"
         )
         output.append(new_header)

@@ -145,8 +145,8 @@ def generate_figure(parameters):
             'longitude': 'Longitude',
             'depth':     'Depth',
             'RMS':       'rms',
-            'errH':      'erh',
-            'errZ':      'erv',
+            'true_erh':  'erh',
+            'true_erz':  'erv',
             'Gap':       'gap',
         })
         events_df['Magnitude'] = float('nan')

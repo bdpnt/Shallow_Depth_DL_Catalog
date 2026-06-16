@@ -63,7 +63,7 @@ def _read_file(file):
     df         = pd.read_csv(file)
     df['date'] = pd.to_datetime(df['date-time'])
     df['time'] = df['date']
-    df         = df.rename(columns={'errH': 'erh', 'errZ': 'erv'})
+    df         = df.rename(columns={'true_erh': 'erh', 'true_erz': 'erv'})
     return df[['date', 'latitude', 'longitude', 'erh', 'erv', 'time']]
 
 
