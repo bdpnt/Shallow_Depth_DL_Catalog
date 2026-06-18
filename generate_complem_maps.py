@@ -17,7 +17,10 @@ Usage
     python generate_complem_maps.py
 """
 
+import glob
+import math
 import os
+import re
 
 from complem_figures.event_maps import EventMapsParams, generate_figure as gen_event
 
@@ -32,17 +35,54 @@ _LOC          = os.path.join(_PROJECT_ROOT, 'loc')
 _FIGS         = os.path.join(_PROJECT_ROOT, 'complem_figures')
 
 # ---------------------------------------------------------------------------
-# Zone configs (inner box, outer box)
+# Zone configs (inner box, outer box) — derived from loc/GLOBAL_<k>/last.in
 # ---------------------------------------------------------------------------
 
-_ZONE_CONFIGS = {
-    1: (((42.50, -2.00), (43.50, -0.75)), ((41.60, -3.22), (44.40,  0.46))),
-    2: (((42.50, -1.00), (43.25,  0.50)), ((41.60, -2.22), (44.15,  1.71))),
-    3: (((42.00,  0.25), (43.25,  1.00)), ((41.10, -0.96), (44.15,  2.20))),
-    4: (((42.00,  0.75), (43.00,  2.25)), ((41.10, -0.46), (43.90,  3.45))),
-    5: (((42.00,  2.00), (43.00,  3.50)), ((41.10,  0.79), (43.90,  4.70))),
-    6: (((42.75,  2.25), (43.75,  3.50)), ((41.85,  1.03), (44.65,  4.75))),
-}
+_R = 6371.0
+_TRANS_RE  = re.compile(r'^TRANS\s+LAMBERT\s+WGS-84\s+([\d.\-]+)\s+([\d.\-]+)', re.M)
+_LOCGRD_RE = re.compile(r'^LOCGRID\s+(\d+)\s+(\d+)', re.M)
+
+
+def _load_zone_configs(loc_dir):
+    configs = {}
+    for path in sorted(glob.glob(os.path.join(loc_dir, 'GLOBAL_*', 'last.in'))):
+        m = re.search(r'GLOBAL_(\d+)', path)
+        if not m:
+            continue
+        zone_id = int(m.group(1))
+        with open(path) as f:
+            content = f.read()
+        mt = _TRANS_RE.search(content)
+        ml = _LOCGRD_RE.search(content)
+        if not (mt and ml):
+            continue
+        lat_sw_out, lon_sw_out = float(mt.group(1)), float(mt.group(2))
+        nx, ny = int(ml.group(1)), int(ml.group(2))
+
+        # Recover inner SW: exact inverse of _km_to_latlon(-100, -100, inner_sw)
+        lat_sw_in = lat_sw_out + math.degrees(100.0 / _R)
+        lon_sw_in = lon_sw_out + math.degrees(100.0 / (_R * math.cos(math.radians(lat_sw_in))))
+
+        # Extents in km from inner SW origin
+        x1 = nx * 0.05 - 200
+        y1 = ny * 0.05 - 200
+
+        # Inner NE: mirrors _latlon_to_km (average latitude for lon)
+        lat_ne_in = lat_sw_in + math.degrees(y1 / _R)
+        lon_ne_in = lon_sw_in + math.degrees(x1 / (_R * math.cos(math.radians((lat_sw_in + lat_ne_in) / 2))))
+
+        # Outer NE: mirrors _km_to_latlon (cos of inner SW lat only)
+        lat_ne_out = lat_sw_in + math.degrees((y1 + 100) / _R)
+        lon_ne_out = lon_sw_in + math.degrees((x1 + 100) / (_R * math.cos(math.radians(lat_sw_in))))
+
+        configs[zone_id] = (
+            ((round(lat_sw_in,  2), round(lon_sw_in,  2)), (round(lat_ne_in,  2), round(lon_ne_in,  2))),
+            ((round(lat_sw_out, 2), round(lon_sw_out, 2)), (round(lat_ne_out, 2), round(lon_ne_out, 2))),
+        )
+    return configs
+
+
+_ZONE_CONFIGS = _load_zone_configs(_LOC)
 
 
 # ---------------------------------------------------------------------------
