@@ -6,8 +6,8 @@ Produce PyGMT event maps for all NLL zones and the final catalog.
 Requires: pygmt_env
 
 Runs in order:
-  1. Event map for each of the 6 NLL zones (loc/GLOBAL_k/GLOBAL_k.obs.sum.grid0.loc.csv)
-  2. Event map for the final merged catalog (obs/FINAL.obs)
+  1. Event map for each of the 6 NLL zones
+  2. Event map for the final merged catalog
 
 For matplotlib-based figures (Gutenberg-Richter, depth, error maps),
 run generate_complem_figures.py with seisbench_env.
@@ -52,15 +52,15 @@ _ZONE_CONFIGS = {
 def run_pipeline():
     """Generate PyGMT event maps for each NLL zone and the final catalog."""
 
-    # 1. Per-zone event maps (read second-pass NLL CSV directly)
+    # 1. Per-zone event maps (filter deduplicated FINAL.csv by source zone)
     for key, (region_in, region_out) in _ZONE_CONFIGS.items():
         gen_event(EventMapsParams(
-            fileBulletin = os.path.join(_LOC, f'GLOBAL_{key}',
-                                        f'GLOBAL_{key}.obs.sum.grid0.loc.csv'),
-            figSave      = os.path.join(_FIGS, 'event_maps', f'GLOBAL_{key}.pdf'),
-            fileStations = os.path.join(_LOC,  f'GLOBAL_{key}', 'last.stations'),
-            region_in    = region_in,
-            region_out   = region_out,
+            fileBulletin  = os.path.join(_RESULT, 'FINAL.csv'),
+            figSave       = os.path.join(_FIGS, 'event_maps', f'GLOBAL_{key}.pdf'),
+            fileStations  = os.path.join(_LOC,  f'GLOBAL_{key}', 'last.stations'),
+            region_in     = region_in,
+            region_out    = region_out,
+            source_filter = f'GLOBAL_{key}',
         ))
 
     # 2. Final merged catalog

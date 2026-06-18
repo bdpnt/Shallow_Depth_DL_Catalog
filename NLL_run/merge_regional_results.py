@@ -158,7 +158,7 @@ def merge_bulletins(csv_files, output_path, log_dir=None):
         lambda r: _compute_true_erz(*r[_ell_args]), axis=1
     )
 
-    merged = merged.sort_values('date-time').drop(columns='_source')
+    merged = merged.sort_values('date-time').rename(columns={'_source': 'source'})
 
     parent = os.path.dirname(output_path)
     if parent:

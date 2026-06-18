@@ -3,9 +3,9 @@ event_maps.py
 ============================
 Generate a PyGMT map of seismic events coloured by depth.
 
-Reads a .csv (NLL result), .obs, or legacy .txt bulletin, optionally filters
-high-error events, and plots each event on a Pyrenees basemap coloured by
-depth. Optionally overlays station positions and zone-boundary rectangles.
+Reads a .csv (NLL result) or .obs bulletin, optionally filters high-error
+events, and plots each event on a Pyrenees basemap coloured by depth.
+Optionally overlays station positions and zone-boundary rectangles.
 
 Quality filter (erh ≤ 3 km, erv ≤ 3 km, gap ≤ 300°, rms ≤ 0.5 s) is applied
 by default. Use --no-filter to skip it (e.g. for pre-relocation .obs files
@@ -25,13 +25,14 @@ Usage
         --bulletin  obs/FINAL.obs \\
         --output    complem_figures/event_maps/FINAL.pdf
 
-    # .csv NLL result with stations and zone boxes
+    # .csv NLL result — single zone from FINAL.csv
     python complem_figures/event_maps.py \\
-        --bulletin   loc/GLOBAL_1/GLOBAL_1.obs.sum.grid0.loc.csv \\
-        --output     complem_figures/event_maps/GLOBAL_1.pdf \\
-        --stations   loc/GLOBAL_1/last.stations \\
-        --region-in  42.50 -2.00 43.50 -0.75 \\
-        --region-out 41.60 -3.22 44.40  0.46
+        --bulletin      RESULT/FINAL.csv \\
+        --output        complem_figures/event_maps/GLOBAL_1.pdf \\
+        --stations      loc/GLOBAL_1/last.stations \\
+        --source-filter GLOBAL_1 \\
+        --region-in     42.50 -2.00 43.50 -0.75 \\
+        --region-out    41.60 -3.22 44.40  0.46
 
     # custom map extent (zoom in on eastern Pyrenees)
     python complem_figures/event_maps.py \\
@@ -62,13 +63,14 @@ _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 
 @dataclass
 class EventMapsParams:
-    fileBulletin: str
-    figSave:      str
-    fileStations: Optional[str]   = None
-    region_in:    Optional[tuple] = None  # ((lat_min, lon_min), (lat_max, lon_max))
-    region_out:   Optional[tuple] = None  # ((lat_min, lon_min), (lat_max, lon_max))
-    map_region:   Optional[list]  = None  # [lon_min, lon_max, lat_min, lat_max]
-    no_filter:    bool            = False
+    fileBulletin:  str
+    figSave:       str
+    fileStations:  Optional[str]   = None
+    region_in:     Optional[tuple] = None  # ((lat_min, lon_min), (lat_max, lon_max))
+    region_out:    Optional[tuple] = None  # ((lat_min, lon_min), (lat_max, lon_max))
+    map_region:    Optional[list]  = None  # [lon_min, lon_max, lat_min, lat_max]
+    no_filter:     bool            = False
+    source_filter: Optional[str]   = None  # e.g. "GLOBAL_1"; None → all sources
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +92,8 @@ def _remove_high_err(df):
 
 def generate_figure(parameters):
     """
-    Read a .csv (NLL result), .obs, or legacy .txt bulletin, filter
-    high-error events, and save a PyGMT map coloured by depth.
+    Read a .csv (NLL result) or .obs bulletin, filter high-error events,
+    and save a PyGMT map coloured by depth.
 
     Parameters
     ----------
@@ -103,23 +105,7 @@ def generate_figure(parameters):
     """
     ext = parameters.fileBulletin.split('.')[-1]
 
-    if ext == 'txt':
-        with open(parameters.fileBulletin, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        print(f"Catalog read @ {parameters.fileBulletin}")
-        events = [event.split() for event in lines]
-        events_df = (
-            pd.DataFrame(events)
-            .drop(columns=[0, 1, 2, 3, 4, 5, 11])
-            .rename(columns={6: 'Latitude', 7: 'Longitude', 8: 'Depth',
-                              9: 'Magnitude', 10: 'rms', 12: 'erh',
-                              13: 'erv', 14: 'gap'})
-            .astype(float)
-        )
-        if not parameters.no_filter:
-            events_df = _remove_high_err(events_df)
-
-    elif ext == 'obs':
+    if ext == 'obs':
         with open(parameters.fileBulletin, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         print(f"Catalog read @ {parameters.fileBulletin}")
@@ -148,13 +134,16 @@ def generate_figure(parameters):
             'true_erh':  'erh',
             'true_erz':  'erv',
             'Gap':       'gap',
+            'source':    'source',
         })
+        if parameters.source_filter and 'source' in events_df.columns:
+            events_df = events_df[events_df['source'] == parameters.source_filter]
         events_df['Magnitude'] = float('nan')
         if not parameters.no_filter:
             events_df = _remove_high_err(events_df)
 
     else:
-        print(f'Unsupported format (expected "txt" or "obs"): {parameters.fileBulletin}')
+        print(f'Unsupported format (expected "csv" or "obs"): {parameters.fileBulletin}')
         return {'output': None}
 
     region = parameters.map_region if parameters.map_region else [-4.0, 4, 41, 45]
@@ -215,7 +204,7 @@ def main():
         description='Generate a PyGMT depth-coloured event map.'
     )
     parser.add_argument('--bulletin',   required=True,
-                        help='Input bulletin file (.txt NLL result or .obs)')
+                        help='Input bulletin file (.csv NLL result or .obs bulletin)')
     parser.add_argument('--output',     required=True,
                         help='Output figure path (PDF or PNG)')
     parser.add_argument('--stations',   default=None,
@@ -234,40 +223,24 @@ def main():
                         help='Map extent: lon_min lon_max lat_min lat_max (default: -4 4 41 45)')
     parser.add_argument('--no-filter', action='store_true',
                         help='Skip the erh/erv/gap/rms quality filter (useful for pre-relocation .obs)')
+    parser.add_argument('--source-filter', default=None,
+                        help='Keep only events from this source zone (e.g. "GLOBAL_1"); CSV only')
     args = parser.parse_args()
 
     ri = args.region_in
     ro = args.region_out
 
     generate_figure(EventMapsParams(
-        fileBulletin = args.bulletin,
-        figSave      = args.output,
-        fileStations = args.stations,
-        region_in    = ((ri[0], ri[1]), (ri[2], ri[3])) if ri else None,
-        region_out   = ((ro[0], ro[1]), (ro[2], ro[3])) if ro else None,
-        map_region   = args.map_region,
-        no_filter    = args.no_filter,
+        fileBulletin  = args.bulletin,
+        figSave       = args.output,
+        fileStations  = args.stations,
+        region_in     = ((ri[0], ri[1]), (ri[2], ri[3])) if ri else None,
+        region_out    = ((ro[0], ro[1]), (ro[2], ro[3])) if ro else None,
+        map_region    = args.map_region,
+        no_filter     = args.no_filter,
+        source_filter = args.source_filter,
     ))
 
 
 if __name__ == '__main__':
     main()
-
-    ''' ALL OPTIONS TO USE
-    all_runs = {
-        "1": ("RESULT/GLOBAL_1.txt", "loc/GLOBAL_1/last.stations", "complem_figures/event_maps/GLOBAL_1.pdf",
-              ((42.50, -2.00), (43.50, -0.75)), ((41.60, -3.22), (44.40, 0.46))),
-        "2": ("RESULT/GLOBAL_2.txt", "loc/GLOBAL_2/last.stations", "complem_figures/event_maps/GLOBAL_2.pdf",
-              ((42.50, -1.00), (43.25, 0.50)), ((41.60, -2.22), (44.15, 1.71))),
-        "3": ("RESULT/GLOBAL_3.txt", "loc/GLOBAL_3/last.stations", "complem_figures/event_maps/GLOBAL_3.pdf",
-              ((42.00, 0.25), (43.25, 1.00)), ((41.10, -0.96), (44.15, 2.20))),
-        "4": ("RESULT/GLOBAL_4.txt", "loc/GLOBAL_4/last.stations", "complem_figures/event_maps/GLOBAL_4.pdf",
-              ((42.00, 0.75), (43.00, 2.25)), ((41.10, -0.46), (43.90, 3.45))),
-        "5": ("RESULT/GLOBAL_5.txt", "loc/GLOBAL_5/last.stations", "complem_figures/event_maps/GLOBAL_5.pdf",
-              ((42.00, 2.00), (43.00, 3.50)), ((41.10, 0.79), (43.90, 4.70))),
-        "6": ("RESULT/GLOBAL_6.txt", "loc/GLOBAL_6/last.stations", "complem_figures/event_maps/GLOBAL_6.pdf",
-              ((42.75, 2.25), (43.75, 3.50)), ((41.85, 1.03), (44.65, 4.75))),
-        "Final": ("obs/FINAL.obs", None, "complem_figures/event_maps/FINAL.pdf",
-                  None, None),
-    }
-    '''
