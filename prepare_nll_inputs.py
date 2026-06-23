@@ -7,10 +7,8 @@ For each zone:
   1. Filters obs/GLOBAL.obs to remove picks from stations farther than 80 km.
   2. Generates a zone-specific .obs file, GTSRCE station file, and NLL run file.
 
-After this script, run externally for each zone:
-    Vel2Grid run/run_<key>.in
-    Grid2Time run/run_<key>.in
-    NLLoc     run/run_<key>.in
+NLL runs (Vel2Grid → Grid2Time → NLLoc) are launched automatically after
+each zone's run file is generated.
 
 Usage
 -----
@@ -19,8 +17,9 @@ Usage
 
 import os
 
-from NLL_run.filter_distant_picks      import RemoveFarPicksParams
+from NLL_run.filter_distant_picks       import RemoveFarPicksParams
 from NLL_run.generate_regional_runfiles import GenRunParams
+from NLL_run.run_zone                   import run_zone
 import NLL_run
 
 # ---------------------------------------------------------------------------
@@ -81,7 +80,7 @@ def run_pipeline():
 
         NLL_run.generate_regional_runfiles.generate_run(params_run)
 
-        print()
+        run_zone(os.path.join(_RUN, f'run_{key}.in'))
 
 
 # ---------------------------------------------------------------------------
