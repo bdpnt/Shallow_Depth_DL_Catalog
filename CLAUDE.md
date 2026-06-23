@@ -38,15 +38,9 @@ The workflow follows 5 main stages:
 ### 4. Earthquake Relocation (NonLinLoc)
 The study area is too large for a single NLL run, so it is split into **6 geographic zones**.
 
-- **`prepare_nll_inputs.py`** — generates one `.obs` file and one `.in` run file per zone, plus GTSRCE station files
-- External (run manually in terminal):
-  ```
-  Vel2Grid run/<runfile.in>
-  Grid2Time run/<runfile.in>
-  NLLoc run/<runfile.in>
-  ```
-- **`generate_nll_corrections.py`** — generates second-pass run files by appending per-station delay corrections derived from first-run arrival-time residuals; also exports the locdelay summary via `export_locdelay_info`
-- Second pass: same external commands repeated
+- **`prepare_nll_inputs.py`** — generates one `.obs` file and one `.in` run file per zone, plus GTSRCE station files; then automatically runs Vel2Grid → Grid2Time → NLLoc for each zone via `NLL_run/run_zone.py`
+- **`generate_nll_corrections.py`** — generates second-pass run files by appending per-station delay corrections derived from first-run arrival-time residuals; also exports the locdelay summary via `export_locdelay_info`; then automatically runs NLLoc for each zone via `NLL_run/run_zone.py` with `--corrections-pass` (grids already built)
+- **`NLL_run/run_zone.py`** — runs Vel2Grid → Grid2Time → NLLoc in sequence for a given `.in` file; `--corrections-pass` skips Vel2Grid/Grid2Time
 
 ### 5. Post-relocation Processing
 - **`finalize_nll_catalog.py`**:
@@ -117,3 +111,6 @@ The root-level script **`add_temp_picks.py`** orchestrates the full pipeline (st
 - Use the format `type: description` — e.g. `fix: ...`, `feat: ...`, `docs: ...`. Never use scoped form `fix(module): ...`
 - **Never push automatically to main** — commit and push to the **`claude` branch** without asking, but notice the user
 - The user reviews changes locally and decides when to merge or push to `main`
+
+### Pull Request Format
+- PR body: **Summary section only** (bullet points of what changed and why). No "Test plan" section.

@@ -10,8 +10,8 @@ For each of the 6 geographic zones:
 
 Also exports a summary of all locdelay corrections to run/locdelays/.
 
-After this script, run externally for each zone:
-    NLLoc run/run_<key>_PR.in
+NLLoc is launched automatically for each zone after its corrections run file
+is generated.
 
 Usage
 -----
@@ -23,6 +23,7 @@ import os
 
 from NLL_run.append_station_delays import SecondRunParams, append_station_delays
 from NLL_run.export_locdelay_info  import export_locdelay_info
+from NLL_run.run_zone              import run_zone
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -55,6 +56,8 @@ def run_pipeline():
         )
 
         append_station_delays(params_ssst_W)
+
+        run_zone(os.path.join(_RUN, f'run_{key}_PR.in'), corrections_pass=True)
 
     # Export the locdelays
     export_locdelay_info(
