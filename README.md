@@ -78,6 +78,7 @@ Shallow_Depth_DL_Catalog/
 │   └── plot_global_catalog_map.py
 │
 ├── NLL_run/                  # NonLinLoc workflow modules
+│   ├── run_zone.py                  # Run Vel2Grid → Grid2Time → NLLoc for one zone
 │   ├── generate_regional_runfiles.py
 │   ├── append_station_delays.py
 │   ├── export_locdelay_info.py
@@ -208,13 +209,7 @@ Calls `NLL_run/generate_regional_runfiles.py` → `generate_run()` for each zone
 - Generates `stations/GTSRCE_1.txt` … `stations/GTSRCE_6.txt` (station lists)
 - Generates `run/run_1.in` … `run/run_6.in` (NLL configuration files)
 
-Then run NLL externally for each zone:
-
-```bash
-Vel2Grid run/run_<N>.in
-Grid2Time run/run_<N>.in
-NLLoc run/run_<N>.in
-```
+NLL is then launched automatically via `NLL_run/run_zone.py`, which runs Vel2Grid → Grid2Time → NLLoc in sequence for each zone.
 
 #### Second pass — `generate_nll_corrections.py`
 
@@ -222,13 +217,7 @@ For each zone, this script does two things:
 1. Cleans up `.hdr` files left by NLL in the `loc/GLOBAL_<N>/` folder.
 2. Reads per-station average residuals (LOCDELAY entries) from the first run and appends qualifying station delay corrections to generate second-pass run files `run/run_<N>_PR.in`.
 
-Run NLL again:
-
-```bash
-Vel2Grid run/run_<N>_PR.in
-Grid2Time run/run_<N>_PR.in
-NLLoc run/run_<N>_PR.in
-```
+NLLoc is then launched automatically via `NLL_run/run_zone.py` with `--corrections-pass` (Vel2Grid and Grid2Time are skipped since the grids are already built).
 
 #### Diagnostic — `NLL_run/export_locdelay_info.py`
 
