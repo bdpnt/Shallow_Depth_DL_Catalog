@@ -225,7 +225,7 @@ def generate_figure(parameters):
     grid = load_earth_relief('03s', region=Region)
     fig.grdimage(grid=-grid, cmap='gray')
 
-    failles_dir = os.path.join(_PROJECT_ROOT, 'FAILLES')
+    failles_dir = os.path.join(_PROJECT_ROOT, 'failles')
     fig.plot(os.path.join(failles_dir, 'FNP.dat'),
              pen='1.25p', style='f1c/0.25c', fill='black')
     fig.plot(os.path.join(failles_dir, 'structures_lacan.dat'),
