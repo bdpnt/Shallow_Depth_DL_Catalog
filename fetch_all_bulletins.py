@@ -26,7 +26,7 @@ from obspy import UTCDateTime
 # ---------------------------------------------------------------------------
 
 _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-_ORG = os.path.join(_PROJECT_ROOT, 'ORGCATALOGS')
+_ORG = os.path.join(_PROJECT_ROOT, 'org_catalogs')
 _OBS = os.path.join(_PROJECT_ROOT, 'obs')
 
 

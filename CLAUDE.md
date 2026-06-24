@@ -19,7 +19,7 @@ The workflow follows 5 main stages:
 - Each station gets a unique code; duplicates are removed by distance threshold (20m)
 
 ### 2. Catalog Fetching & Conversion
-- Sources: RESIF (FDSN), ICGC, IGN, LDG, OMP (in `ORGCATALOGS/`)
+- Sources: RESIF (FDSN), ICGC, IGN, LDG, OMP (in `org_catalogs/`)
 - Script: `fetch_all_bulletins.py` → calls modules in `fetch_obs/`
 - Output: individual `.obs` files per source in `obs/`
 

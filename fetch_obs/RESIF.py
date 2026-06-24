@@ -9,7 +9,7 @@ are written. The QuakeML file is also saved alongside the .obs output.
 Usage
 -----
     python fetch_obs/RESIF.py \\
-        --file-name  ORGCATALOGS/RESIF_20-25.xml \\
+        --file-name  org_catalogs/RESIF_20-25.xml \\
         --save-name  obs/RESIF_20-25.obs \\
         --client     RESIF \\
         --t1         2020-01-01T00:00:00 \\
