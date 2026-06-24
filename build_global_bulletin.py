@@ -31,7 +31,7 @@ import global_obs
 
 _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 _OBS        = os.path.join(_PROJECT_ROOT, 'obs')
-_MAGMODELS  = os.path.join(_PROJECT_ROOT, 'MAGMODELS')
+_MAGMODELS  = os.path.join(_PROJECT_ROOT, 'mag_model')
 _GLOBAL_OBS = os.path.join(_PROJECT_ROOT, 'global_obs')
 _STATIONS   = os.path.join(_PROJECT_ROOT, 'stations')
 

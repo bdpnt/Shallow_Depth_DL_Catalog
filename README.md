@@ -121,7 +121,7 @@ Shallow_Depth_DL_Catalog/
 ├── RESULT/                   # Merged relocation results (.csv)
 ├── model/                    # Velocity model grids (NLL)
 ├── time/                     # Travel time grids (NLL)
-└── MAGMODELS/                # Saved magnitude conversion models
+└── mag_model/                # Saved magnitude conversion models
 ```
 
 ---
@@ -194,7 +194,7 @@ Runs the following steps in sequence:
 **Outputs:**
 - `obs/GLOBAL.obs` — unified catalog
 - `obs/MAPS/` — statistics figures
-- `MAGMODELS/` — serialized magnitude models
+- `mag_model/` — serialized magnitude models
 
 ---
 

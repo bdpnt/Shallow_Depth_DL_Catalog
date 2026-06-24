@@ -4,7 +4,7 @@ apply_magnitude_models.py
 Apply pre-computed piecewise regression models to convert all event magnitudes
 in a set of .obs bulletins to ML LDG.
 
-Models are loaded from MAGMODELS/<MagType> <Author>.joblib files.
+Models are loaded from mag_model/<MagType> <Author>.joblib files.
 
 Usage
 -----
@@ -182,7 +182,7 @@ def apply_magnitude_models(parameters, log_dir=None):
             model_name_stem = f'{mag_type} {folder_author}'
 
             try:
-                file_model  = f'MAGMODELS/{model_name_stem}.joblib'
+                file_model  = f'mag_model/{model_name_stem}.joblib'
                 models      = joblib.load(file_model)
                 model_ge_2  = list(models.values())[0]
                 model_lt_2  = list(models.values())[1]
