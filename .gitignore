@@ -1,12 +1,12 @@
 __pycache__
 .ipynb_checkpoints/
 codes_other/
-FAILLES/
+failles/
 loc/
-MAGMODELS/
+mag_model/
 model/
 obs/
-ORGCATALOGS/
+org_catalogs/
 picks/
 RESULT/
 run/

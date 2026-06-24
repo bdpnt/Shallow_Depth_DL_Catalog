@@ -11,9 +11,9 @@ Step 3 — write_catalog_to_obs : parse the GSE2 file and write .obs.
 Usage
 -----
     python fetch_obs/ICGC.py \\
-        --file-name   ORGCATALOGS/ICGC_20-25.txt \\
-        --code-name   ORGCATALOGS/CODES_ICGC_20-25.txt \\
-        --error-name  ORGCATALOGS/ERR_ICGC_20-25.txt \\
+        --file-name   org_catalogs/ICGC_20-25.txt \\
+        --code-name   org_catalogs/CODES_ICGC_20-25.txt \\
+        --error-name  org_catalogs/ERR_ICGC_20-25.txt \\
         --save-name   obs/ICGC_20-25.obs \\
         --start-year  2020 --start-month 1 \\
         --end-year    2025 --end-month   12

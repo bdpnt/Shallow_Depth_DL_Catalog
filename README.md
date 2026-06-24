@@ -113,7 +113,7 @@ Shallow_Depth_DL_Catalog/
 │   ├── figures/                     # Output figures
 │   └── console_output/              # Log files
 │
-├── ORGCATALOGS/              # Raw input catalogs (not modified)
+├── org_catalogs/              # Raw input catalogs (not modified)
 ├── obs/                      # .obs bulletin files (source + merged)
 ├── stations/                 # Station inventories (XML + unified)
 ├── run/                      # NLL run configuration files (.in)
@@ -121,7 +121,7 @@ Shallow_Depth_DL_Catalog/
 ├── RESULT/                   # Merged relocation results (.csv)
 ├── model/                    # Velocity model grids (NLL)
 ├── time/                     # Travel time grids (NLL)
-└── MAGMODELS/                # Saved magnitude conversion models
+└── mag_model/                # Saved magnitude conversion models
 ```
 
 ---
@@ -155,7 +155,7 @@ Merges all station XML inventories (FDSN networks + OMP) into a single unified i
 **Script:** `fetch_all_bulletins.py`  
 **Modules:** `fetch_obs/` (one module per source)
 
-Downloads or reads each catalog and converts it to the `.obs` format. RESIF and ICGC are fetched dynamically; IGN, LDG, and OMP are read from local files in `ORGCATALOGS/`.
+Downloads or reads each catalog and converts it to the `.obs` format. RESIF and ICGC are fetched dynamically; IGN, LDG, and OMP are read from local files in `org_catalogs/`.
 
 **Outputs:** individual `.obs` files in `obs/`  
 (e.g. `RESIF_20-25.obs`, `IGN_20-25.obs`, `OMP_78-19.obs`, …)
@@ -194,7 +194,7 @@ Runs the following steps in sequence:
 **Outputs:**
 - `obs/GLOBAL.obs` — unified catalog
 - `obs/MAPS/` — statistics figures
-- `MAGMODELS/` — serialized magnitude models
+- `mag_model/` — serialized magnitude models
 
 ---
 

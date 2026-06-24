@@ -7,7 +7,7 @@ bulletin format, extracting P and S picks.
 Usage
 -----
     python fetch_obs/OMP.py \\
-        --file-name ORGCATALOGS/OMP_78-19.mag \\
+        --file-name org_catalogs/OMP_78-19.mag \\
         --save-name obs/OMP_78-19.obs
 """
 

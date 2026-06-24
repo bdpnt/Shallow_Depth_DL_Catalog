@@ -9,7 +9,7 @@ Only manual P/S picks are written.
 Usage
 -----
     python fetch_obs/IGN.py \\
-        --file-name ORGCATALOGS/IGN_20-25.txt \\
+        --file-name org_catalogs/IGN_20-25.txt \\
         --save-name obs/IGN_20-25.obs
 """
 

@@ -7,8 +7,8 @@ files to the .obs bulletin format.
 Usage
 -----
     python fetch_obs/LDG.py \\
-        --catalog-file ORGCATALOGS/LDG_20-25_catalog.txt \\
-        --arrival-file ORGCATALOGS/LDG_20-25_arrivals.txt \\
+        --catalog-file org_catalogs/LDG_20-25_catalog.txt \\
+        --arrival-file org_catalogs/LDG_20-25_arrivals.txt \\
         --save-name    obs/LDG_20-25.obs
 """
 

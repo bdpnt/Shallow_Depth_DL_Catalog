@@ -20,8 +20,8 @@ Usage
         --mag-type2  ML                \\
         --mag-name1  "MLv RESIF"       \\
         --mag-name2  "ML LDG"          \\
-        --save-name  MAGMODELS/MLv_RESIF.joblib \\
-        --save-figs  MAGMODELS/FIGURES/
+        --save-name  mag_model/MLv_RESIF.joblib \\
+        --save-figs  mag_model/FIGURES/
 
     # --dist-thresh (km, default 10) and --time-thresh (s, default 2) are optional
 """
@@ -575,7 +575,7 @@ def main():
     parser.add_argument('--dist-thresh', type=float, default=10.0, help='Max matching distance in km (default: 10)')
     parser.add_argument('--time-thresh', type=float, default=2.0,  help='Max matching time diff in s (default: 2)')
     parser.add_argument('--save-name',   required=True,      help='Output joblib model path')
-    parser.add_argument('--save-figs',   default='MAGMODELS/FIGURES/', help='Output figures directory')
+    parser.add_argument('--save-figs',   default='mag_model/FIGURES/', help='Output figures directory')
     args = parser.parse_args()
 
     params = MagModelParams(
