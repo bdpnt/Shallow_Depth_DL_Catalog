@@ -250,10 +250,10 @@ def _plot_timeline(before, after, output_path, parameters):
 
     fig, axes = plt.subplots(2, 1, sharex=True, figsize=(13, 4.2), layout='constrained')
 
-    panels = ((axes[0], med_before, before, 'before'),
-              (axes[1], med_after,  after,  'after'))
+    panels = ((axes[0], med_before, 'before'),
+              (axes[1], med_after,  'after'))
 
-    for axis, medians, frame, label in panels:
+    for axis, medians, label in panels:
         mesh = axis.pcolormesh(edges, [0, 1],
                                np.ma.masked_invalid(medians)[None, :],
                                cmap=cmap, shading='flat', vmin=vmin, vmax=vmax,
@@ -262,12 +262,6 @@ def _plot_timeline(before, after, output_path, parameters):
         axis.set_ylabel(f'{label}\ntemporary picks', rotation=0,
                         ha='right', va='center', fontsize=9)
         axis.grid(False)
-        axis.text(0.995, 0.5,
-                  f'N = {len(frame)}   median = {frame["n_phases"].median():.0f} phases',
-                  transform=axis.transAxes, ha='right', va='center',
-                  fontsize=8, color='white',
-                  bbox=dict(boxstyle='round,pad=0.25', facecolor='black',
-                            alpha=0.35, lw=0))
 
     axes[1].set_xlabel('Year')
     axes[1].set_xlim(edges[0], edges[-1])
@@ -317,27 +311,24 @@ def _plot_distance(merged, output_path, parameters):
             axis.hist(drawn, bins=bins, histtype='stepfilled',
                       color=colour, alpha=0.55, lw=0, zorder=2)
             axis.hist(drawn, bins=bins, histtype='step',
-                      color=colour, lw=1.2, zorder=3,
-                      label=f'{label} ({median:.2f} km median)')
+                      color=colour, lw=1.2, zorder=3)
             axis.axvline(median, color=colour, ls='--', lw=1.1, zorder=4)
 
         near_before = 100.0 * (actual['before'] < _NEAR_KM).mean()
         near_after  = 100.0 * (actual['after']  < _NEAR_KM).mean()
         closer      = int((actual['after'] < actual['before'] - 1e-3).sum())
 
-        axis.text(0.97, 0.72,
-                  f'N = {len(subset)}\n'
-                  f'within {_NEAR_KM:.0f} km: {near_before:.1f} % -> {near_after:.1f} %\n'
-                  f'closer station: {closer} ({100.0 * closer / len(subset):.1f} %)',
-                  transform=axis.transAxes, ha='right', va='top', fontsize=8,
-                  bbox=dict(boxstyle='round,pad=0.25', facecolor='white',
-                            alpha=0.75, lw=0))
-
+        # Everything the figure has to say sits in the title: the panels carry no
+        # legend and no annotation box, the colour key belongs to the caption.
         axis.set_xlim(0, parameters.max_distance)
         axis.set_xlabel('Distance to the closest recording station (km)')
         axis.set_ylabel('Events')
-        axis.set_title(title, fontsize=10)
-        axis.legend(fontsize=8, frameon=False)
+        axis.set_title(
+            f'{title}   (N = {len(subset)})\n'
+            f'median {np.median(actual["before"]):.2f} -> {np.median(actual["after"]):.2f} km   |   '
+            f'within {_NEAR_KM:.0f} km {near_before:.1f} % -> {near_after:.1f} %   |   '
+            f'closer {closer} ({100.0 * closer / len(subset):.1f} %)',
+            fontsize=9)
 
     fig.suptitle('Distance to the closest recording station, '
                  'before and after the temporary networks', fontweight='bold')
