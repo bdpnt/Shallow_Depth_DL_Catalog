@@ -168,16 +168,15 @@ def _compute_envelopes(distances):
     """
     TP, TS = _get_times(_MODELS, _DEPTHS, distances)
 
-    tp_low  = np.minimum(TP['min'][_DEPTHS[0]], TP['plu'][_DEPTHS[0]])
-    tp_high = np.maximum(TP['min'][_DEPTHS[0]], TP['plu'][_DEPTHS[0]])
-    ts_low  = np.minimum(TS['min'][_DEPTHS[0]], TS['plu'][_DEPTHS[0]])
-    ts_high = np.maximum(TS['min'][_DEPTHS[0]], TS['plu'][_DEPTHS[0]])
+    # The model keys are velocity perturbations, not time bounds: "min" (95%
+    # velocity) yields the *latest* arrivals and "plu" (105%) the earliest, so
+    # neither key can be tied to one edge of the band. Take the envelope over
+    # every (model, depth) combination.
+    stack_p = np.array([TP[m][depth] for m in ('min', 'plu') for depth in _DEPTHS])
+    stack_s = np.array([TS[m][depth] for m in ('min', 'plu') for depth in _DEPTHS])
 
-    for depth in _DEPTHS[1:]:
-        tp_low  = np.minimum(tp_low,  TP['min'][depth])
-        tp_high = np.maximum(tp_high, TP['plu'][depth])
-        ts_low  = np.minimum(ts_low,  TS['min'][depth])
-        ts_high = np.maximum(ts_high, TS['plu'][depth])
+    tp_low,  tp_high = stack_p.min(axis=0), stack_p.max(axis=0)
+    ts_low,  ts_high = stack_s.min(axis=0), stack_s.max(axis=0)
 
     return pd.DataFrame({
         'distance': distances,
