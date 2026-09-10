@@ -38,8 +38,8 @@ Usability rule
 --------------
 An event is unusable when its location PDF cannot be trusted:
 
-  c68_overconfident   (C68 - 0.68) / C68_sigma_n < -2, i.e. the posterior mass
-                      inside the nominal 68% ellipsoid falls short by more than
+  c68_overconfident   (C68 - 0.6827) / C68_sigma_n < -2, i.e. the posterior mass
+                      inside the nominal one-sigma ellipsoid falls short by more than
                       two null sigmas -> the reported ERH/ERZ are over-confident
   dip_bimodal         Hartigan's dip test rejects unimodality of the depth
                       marginal AND the modal interval is wider than true_erz
@@ -61,14 +61,14 @@ covers them honestly. Over this catalog that is the common case: the median moda
 interval among p < 0.05 events is 0.59 x true_erz. Requiring the interval to
 exceed true_erz moves the count from 5329 to 661.
 
-Why C68 is compared to a simulated null rather than to 0.68 directly: the 68%
-ellipsoid is fitted to the very samples whose coverage is being measured, so even
-a perfectly Gaussian cloud scatters around 0.68, and that scatter is not binomial
--- sqrt(.68*.32/n) overestimates it by ~2x (0.021 vs ~0.012 at n=479). pdf_metrics
-simulates the real spread per sample size into C68_sigma_n. With the median
-sigma of ~0.0124 the -2 sigma cut sits at C68 < 0.655, which flags 155 events;
-a raw C68 < 0.68 cut would flag 2944, of which ~2789 are within sampling noise
-of perfect coverage.
+Why C68 is compared to a simulated null rather than to 0.6827 directly: the
+one-sigma ellipsoid is fitted to the very samples whose coverage is being measured,
+so even a perfectly Gaussian cloud scatters around 0.6827, and that scatter is not
+binomial -- sqrt(.68*.32/n) overestimates it by ~2x (0.021 vs ~0.012 at n=479).
+pdf_metrics simulates the real spread per sample size into C68_sigma_n. With the
+median sigma of ~0.0124 the -2 sigma cut sits at C68 < 0.658, which flags on the
+order of 150 events; a raw C68 < 0.6827 cut would flag thousands, nearly all of
+them within sampling noise of perfect coverage.
 
 Usage
 -----
@@ -122,7 +122,7 @@ _NS    = 'http://shallow-depth-dl-catalog/quakeml/1.0'
 _NSMAP = {'pyr': _NS}
 
 _C68_Z_MIN        = -2.0    # null sigmas below Gaussian coverage before rejection
-_NOMINAL_COVERAGE = 0.68    # coverage the confidence ellipsoid is built for
+_NOMINAL_COVERAGE = 0.6827  # erf(1/sqrt(2)): one-sigma coverage, matching pdf_metrics.py
 _CHUNK_SIZE       = 5000    # events serialized per pass (bounds peak memory)
 _SPLIT_YEARS      = 5       # calendar length of each split part
 

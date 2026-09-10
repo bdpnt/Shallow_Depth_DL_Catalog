@@ -92,7 +92,7 @@ class PdfCloudParams:
     event_id:       str
     zone:           str
     nll_result_csv: str = None
-    confidence:     float = 0.68
+    confidence:     float = 0.6827   # erf(1/sqrt(2)), one sigma
     output:       str = None
 
 
@@ -504,8 +504,8 @@ def main():
     parser.add_argument('--date', help='Approximate ISO date/time for location search')
     parser.add_argument('--radius-km', type=float, default=10.0, help='Search radius for --lat/--lon (default: 10)')
     parser.add_argument('--window-days', type=float, default=5.0, help='Search time window for --date (default: 5)')
-    parser.add_argument('--confidence', type=float, default=0.68,
-                        help='Confidence-ellipsoid level per iteration surface (default: 0.9)')
+    parser.add_argument('--confidence', type=float, default=0.6827,
+                        help='Confidence-ellipsoid level per iteration surface (default: 0.6827, one sigma)')
     parser.add_argument('--output', default=None,
                         help='Output HTML path (default: complem_figures/pdf_cloud/<event_id>.html)')
     args = parser.parse_args()

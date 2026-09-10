@@ -93,11 +93,23 @@ def _build_covariance(az1, dip1, len1, az2, dip2, len2, len3):
     R = np.column_stack([v1, v2, v3])
     return R @ R.T
 
-# 68% chi-square factors used to convert between NLLoc's 3-DOF ellipsoid
+# One-sigma chi-square factors used to convert between NLLoc's 3-DOF ellipsoid
 # scaling and the DOF-appropriate scaling for each derived quantity.
-_S1_1DOF = chi2dist.ppf(0.68, df=1)   # ERZ: 1-DOF marginal std dev
-_S2_2DOF = chi2dist.ppf(0.68, df=2)   # ERH: 2-DOF horizontal error ellipse
-_S3_3DOF = chi2dist.ppf(0.68, df=3)   # NLLoc's own ellipsoid-axis scaling
+#
+# The coverage is erf(1/sqrt(2)) = 0.6827, i.e. exactly one sigma, not a flat
+# 0.68: the two differ by 1.1% in chi-square at 1 DOF (0.9889 vs 1.0000), and
+# 0.68 is the value that makes the 1-DOF factor miss unity.
+_NOMINAL_COVERAGE = 0.6827            # erf(1/sqrt(2)), one-sigma coverage
+_S1_1DOF = chi2dist.ppf(_NOMINAL_COVERAGE, df=1)   # ERZ: 1-DOF marginal std dev
+_S2_2DOF = chi2dist.ppf(_NOMINAL_COVERAGE, df=2)   # ERH: 2-DOF horizontal error ellipse
+
+# NLLoc's own ellipsoid-axis scaling. Not a free choice — this factor exists only
+# to be divided back out, so it must be the literal the binary applied:
+# `#define DELTA_CHI_SQR_68_3 3.53` (matrix_statistics.h:31, quoted from Numerical
+# Recipes 2nd ed. sec 15.6), passed to CalcErrorEllipsoid at NLLocLib.c:404. That
+# is the one-sigma table value rounded to 3 figures; chi2.ppf(0.6827, df=3) gives
+# 3.5267, which is right in principle but 0.09% off what actually scaled the axes.
+_S3_3DOF = 3.53
 
 def _compute_true_erz(az1, dip1, len1, az2, dip2, len2, len3):
     """1-DOF, 68% confidence vertical standard deviation (km)."""

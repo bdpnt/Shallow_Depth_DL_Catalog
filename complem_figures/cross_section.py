@@ -83,7 +83,7 @@ _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 
 # Location-PDF acceptance thresholds — mirror NLL_run/export_quakeml.py, so that
 # --usable selects exactly the events exported with pyr:usable="true".
-_NOMINAL_COVERAGE = 0.68
+_NOMINAL_COVERAGE = 0.6827   # erf(1/sqrt(2)), one sigma
 _C68_Z_MIN        = -2.0
 
 

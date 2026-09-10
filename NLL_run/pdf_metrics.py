@@ -11,8 +11,9 @@ them can see.
 
   J        negentropy KL(p || N(mu, Sigma)) in nats; 0 for an exactly Gaussian PDF
   Psi      exp(-J), the effective-volume ratio V_eff(PDF) / V_eff(ellipsoid)
-  C68      fraction of posterior mass inside the nominal 68% ellipsoid; > 0.68
-           means the reported errors are conservative, < 0.68 over-confident
+  C68      fraction of posterior mass inside the nominal one-sigma ellipsoid;
+           > 0.6827 means the reported errors are conservative, < 0.6827
+           over-confident
   dip_stat Hartigan dip statistic on the depth marginal (multimodality)
   dip_sep_km  width of Hartigan's modal interval, in km — how far apart the
            competing depth solutions are
@@ -94,7 +95,11 @@ _DIP_ALPHA    = 0.05
 # width/true_erz ratio tops out near 2.24 over this catalog.
 _DIP_SEP_ERZ_FACTOR = 1.0
 
-_NOMINAL_COVERAGE = 0.68   # coverage the confidence ellipsoid is built for
+# Coverage the confidence ellipsoid is built for: erf(1/sqrt(2)) = 0.6827, exactly
+# one sigma, not a flat 0.68 — the same constant merge_regional_results.py scales
+# true_erh/true_erz with. It sets both the ellipsoid C68 is measured against and
+# the value C68 is compared to, so the two cannot drift apart.
+_NOMINAL_COVERAGE = 0.6827
 _CHI2_68_3DOF = chi2dist.ppf(_NOMINAL_COVERAGE, df=3)
 _GAUSS_ENTROPY_3D = 0.5 * 3 * np.log(2 * np.pi * np.e)   # 4.2568 nats
 
@@ -268,12 +273,12 @@ def _knn_radius(white, k, _rng=np.random.default_rng(0)):
 
 def coverage_68(white):
     """
-    Fraction of samples inside the nominal 68% Gaussian confidence ellipsoid.
+    Fraction of samples inside the nominal one-sigma Gaussian confidence ellipsoid.
 
     For whitened samples the squared Mahalanobis radius is just |w|^2, so this
-    is the fraction with |w|^2 <= chi2.ppf(0.68, 3). Equals 0.68 for a Gaussian
-    PDF; above means the reported ERH/ERZ are conservative, below means they are
-    over-confident.
+    is the fraction with |w|^2 <= chi2.ppf(0.6827, 3) = 3.5267. Equals 0.6827 for
+    a Gaussian PDF; above means the reported ERH/ERZ are conservative, below means
+    they are over-confident.
     """
     return float(np.mean(np.sum(white ** 2, axis=1) <= _CHI2_68_3DOF))
 
@@ -527,7 +532,7 @@ _PREDICTORS = [
 # identical up to sign, and Psi is bounded (0, 1]. Raw C68 rather than the
 # null-normalized C68_z the maps use: here C68 is an x-axis, not a cell median
 # mixing sample counts, and the raw fraction carries a readable reference at
-# 0.68 (the two differ by rho = 0.001 over this catalog).
+# 0.6827 (the two differ by rho = 0.001 over this catalog).
 _ERROR_ROWS = [
     ('true_erh', 'ERH (km)'),
     ('true_erz', 'ERZ (km)'),
@@ -553,7 +558,7 @@ _MAP_METRICS = [
      'cmap': 'viridis', 'vmin': 0.0, 'vmax': 1.0,
      'plotly_cmap': 'Viridis', 'plotly_reverse': False},
     {'column': 'C68_z',      'stat': np.median, 'scale': 1.0,
-     'label': r'median $(C_{68}-0.68)\,/\,\sigma_n$',
+     'label': r'median $(C_{68}-0.6827)\,/\,\sigma_n$',
      'cmap': 'RdBu', 'vmin': -10.0, 'vmax': 10.0,
      'plotly_cmap': 'RdBu', 'plotly_reverse': False},
     {'column': 'dip_reject', 'stat': np.mean,   'scale': 100.0,
@@ -571,7 +576,7 @@ def _add_null_columns(df):
     event's own sample count, so the maps never plot them raw:
 
       J_ratio = J / J_null_p95            > 1 -> non-Gaussian beyond the null
-      C68_z   = (C68 - 0.68) / C68_sigma_n  < 0 -> over-confident, in null sigmas
+      C68_z   = (C68 - 0.6827) / C68_sigma_n  < 0 -> over-confident, in null sigmas
 
     Both nulls come from the event's own row, never from a catalog-wide
     constant: n_scat happens to be near-constant in the current run, but a
