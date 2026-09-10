@@ -19,9 +19,8 @@ Usage
 """
 
 import argparse
-import glob
 import os
-import re
+import sys
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -33,6 +32,16 @@ import pandas as pd
 
 _MODULE_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
+
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+from NLL_run.pdf_metrics import (METRIC_COLUMNS, final_iteration_dir,  # noqa: E402
+                                 windowed_stat_grid)
+
+# Post-SSST only: these come from the .scat clouds of the final SSST relocation,
+# and run/nll_loc/ holds no .scat, so there is no pre-stage counterpart to pair
+# them with. Carried unsuffixed for exactly that reason.
+_PDF_METRIC_COLUMNS = [c for c in METRIC_COLUMNS if c != 'ellipsoidVolume']
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +62,10 @@ class EventRankingParams:
     figure_output:   str = None
     bin_size:        float = 0.02
     min_count:       int = 10
+    max_erh:         float = 3.0
+    max_erz:         float = 3.0
+    corr_matrix:     bool = False
+    corr_matrix_output: str = None
 
 
 # ---------------------------------------------------------------------------
@@ -76,14 +89,9 @@ def _load_raw_zone_pdfvolumes(nll_loc_root, zones):
 
 def _final_ssst_zone_csv(ssst_root, run_name, zone):
     """Return the final (highest loc_ssst_corr<N>) per-zone SSST CSV path, or None if absent."""
-    pattern = os.path.join(ssst_root, run_name, f'Pyrenees_{zone}_SSST', 'loc_ssst_corr*', f'GLOBAL_{zone}')
-    step_dirs = []
-    for d in glob.glob(pattern):
-        match = re.search(r'loc_ssst_corr(\d+)', d)
-        step_dirs.append((int(match.group(1)), d))
-    if not step_dirs:
+    last_dir = final_iteration_dir(ssst_root, run_name, zone)
+    if last_dir is None:
         return None
-    _, last_dir = max(step_dirs)
     csv_path = os.path.join(last_dir, f'Pyrenees_{zone}.sum.grid0.loc.csv')
     return csv_path if os.path.exists(csv_path) else None
 
@@ -143,6 +151,12 @@ def build_ranking(nll_result_csv, ssst_result_csv, nll_loc_root, ssst_root, run_
     )
     merged = merged.merge(ssst_df[context_cols], on='publicId', how='left')
 
+    # PDF-quality metrics, post-SSST only. Absent until NLL_run/pdf_metrics.py has
+    # annotated SSST_result.csv, so take whatever is there rather than assuming.
+    metric_cols = [c for c in _PDF_METRIC_COLUMNS if c in ssst_df.columns]
+    if metric_cols:
+        merged = merged.merge(ssst_df[['publicId'] + metric_cols], on='publicId', how='left')
+
     dropped_ids = set(nll_df['publicId']) - set(ssst_df['publicId'])
     dropped_df = nll_df[nll_df['publicId'].isin(dropped_ids)][context_cols + ['source', 'pdfVolume']].copy()
 
@@ -182,7 +196,7 @@ def build_ranking(nll_result_csv, ssst_result_csv, nll_loc_root, ssst_root, run_
         'ellipsoidVolume_pre', 'ellipsoidVolume_post',
         'n_zones_pre', 'zones_pre', 'n_zones_post', 'zones_post',
         'multi_zone', 'zone_changed',
-    ]
+    ] + metric_cols
     return merged[ordered_cols], dropped_df
 
 
@@ -194,6 +208,9 @@ def build_ranking(nll_result_csv, ssst_result_csv, nll_loc_root, ssst_root, run_
 _LAT_MIN, _LAT_MAX = 42.0, 44.0
 _LON_MIN, _LON_MAX = -2.25, 3.5
 
+_MIN_CHANGE_KM3 = 1.0    # diff gridmap: |median| below this is negligible -> left blank
+_PCT_VMAX       = 100.0  # pct gridmap: full scale; pct_change is bounded at -100 %
+
 
 def _metric_series(ranking_df, base_col, metric):
     """Return a post-minus-pre series for `base_col` (pdfVolume/ellipsoidVolume) under `metric`."""
@@ -203,7 +220,7 @@ def _metric_series(ranking_df, base_col, metric):
     return post - pre
 
 
-def _add_gridmap_subplot(events, ax, values, label, bin_size, min_count):
+def _add_gridmap_subplot(events, ax, values, label, metric, bin_size, min_count):
     """
     Render a windowed-median diff grid and event scatter onto a matplotlib axis.
 
@@ -213,6 +230,8 @@ def _add_gridmap_subplot(events, ax, values, label, bin_size, min_count):
     ax     : matplotlib Axes
     values : pd.Series    — per-event metric value (post - pre based), aligned with events' index
     label  : str          — panel label (e.g. 'pdfVolume')
+    metric : str          — 'diff' (symlog km³ scale, cells below _MIN_CHANGE_KM3 left blank)
+                            or 'pct_change' (linear ±_PCT_VMAX scale)
     bin_size  : float     — grid cell size in degrees
     min_count : int       — minimum event count for a cell to be shown
 
@@ -221,40 +240,36 @@ def _add_gridmap_subplot(events, ax, values, label, bin_size, min_count):
     matplotlib QuadMesh
     """
     import seaborn as sns
+    from matplotlib.colors import SymLogNorm
 
-    bins_lat = max(int(round((_LAT_MAX - _LAT_MIN) / bin_size)), 1)
-    bins_lon = max(int(round((_LON_MAX - _LON_MIN) / bin_size)), 1)
+    (lat_edges, lon_edges), median, count = windowed_stat_grid(
+        [events['latitude'], events['longitude']], values,
+        [(_LAT_MIN, _LAT_MAX), (_LON_MIN, _LON_MAX)], [bin_size, bin_size],
+        window_size=4,
+    )
 
-    lat_edges   = np.linspace(_LAT_MIN, _LAT_MAX, bins_lat + 1)
-    lon_edges   = np.linspace(_LON_MIN, _LON_MAX, bins_lon + 1)
-    median      = np.zeros((bins_lat, bins_lon))
-    count       = np.zeros((bins_lat, bins_lon), dtype=int)
-    window_size = 4
-
-    lat, lon = events['latitude'], events['longitude']
-    for i in range(bins_lat):
-        for j in range(bins_lon):
-            lat_low  = max(lat_edges[i]   - window_size * (lat_edges[1] - lat_edges[0]), _LAT_MIN)
-            lat_high = min(lat_edges[i+1] + window_size * (lat_edges[1] - lat_edges[0]), _LAT_MAX)
-            lon_low  = max(lon_edges[j]   - window_size * (lon_edges[1] - lon_edges[0]), _LON_MIN)
-            lon_high = min(lon_edges[j+1] + window_size * (lon_edges[1] - lon_edges[0]), _LON_MAX)
-            mask = (lat >= lat_low) & (lat <= lat_high) & (lon >= lon_low) & (lon <= lon_high)
-            window = values[mask]
-            if len(window) > 0:
-                median[i, j] = np.median(window)
-                count[i, j]  = len(window)
-            else:
-                median[i, j] = np.nan
-
-    median_masked = np.ma.masked_where(count < min_count, median)
-    vmax = np.nanpercentile(np.abs(median_masked.filled(np.nan)), 95)
-    vmax = vmax if vmax > 0 else 1.0
+    if metric == 'diff':
+        # Volume changes span several decades, so colour them on a signed log scale; below
+        # _MIN_CHANGE_KM3 the change is negligible, so blank the cell instead of colouring it.
+        # Masking the sub-threshold cells is also what keeps the log safe: every displayed
+        # |value| is >= linthresh, so the norm never enters its linear region around zero.
+        median_masked = np.ma.masked_where(
+            (count < min_count) | (np.abs(median) < _MIN_CHANGE_KM3), median)
+        vmax = np.nanmax(np.abs(median_masked.filled(np.nan)))
+        vmax = vmax if vmax > 0 else 1.0
+        linthresh = min(_MIN_CHANGE_KM3, vmax / 10)  # keep a log region if every cell is tiny
+        scale_kwargs = {'norm': SymLogNorm(linthresh, vmin=-vmax, vmax=vmax, base=10)}
+        ax.set_facecolor('white')  # blanked cells read as white, not the seaborn background
+    else:
+        median_masked = np.ma.masked_where(count < min_count, median)
+        scale_kwargs = {'vmin': -_PCT_VMAX, 'vmax': _PCT_VMAX}
 
     mesh = ax.pcolormesh(lon_edges, lat_edges, median_masked,
-                         vmin=-vmax, vmax=vmax, cmap='coolwarm',
-                         shading='auto', alpha=0.9)
+                         cmap='coolwarm', shading='auto', alpha=0.9,
+                         **scale_kwargs)
 
-    sns.scatterplot(x=lon, y=lat, s=0.6, color='black', linewidth=0, ax=ax)
+    sns.scatterplot(x=events['longitude'], y=events['latitude'],
+                    s=0.6, color='black', linewidth=0, ax=ax)
 
     ax.text(0.01, 0.98, label, transform=ax.transAxes,
             fontweight='bold', color='black', ha='left', va='top')
@@ -279,9 +294,9 @@ def _generate_gridmap_figure(ranking_df, metric, output_path, bin_size, min_coun
     pdf_values = _metric_series(ranking_df, 'pdfVolume', metric)
     ellipsoid_values = _metric_series(ranking_df, 'ellipsoidVolume', metric)
 
-    unit = '%' if metric == 'pct_change' else 'km³'
-    mesh_pdf = _add_gridmap_subplot(events, axes[0], pdf_values, 'pdfVolume', bin_size, min_count)
-    mesh_ellipsoid = _add_gridmap_subplot(events, axes[1], ellipsoid_values, 'ellipsoidVolume', bin_size, min_count)
+    unit = '%' if metric == 'pct_change' else f'km³, symlog, |Δ| < {_MIN_CHANGE_KM3:g} blank'
+    mesh_pdf = _add_gridmap_subplot(events, axes[0], pdf_values, 'pdfVolume', metric, bin_size, min_count)
+    mesh_ellipsoid = _add_gridmap_subplot(events, axes[1], ellipsoid_values, 'ellipsoidVolume', metric, bin_size, min_count)
 
     fig.colorbar(mesh_pdf, ax=axes[0], label=f'Median pdfVolume change ({unit})', shrink=0.85, pad=0.02)
     fig.colorbar(mesh_ellipsoid, ax=axes[1], label=f'Median ellipsoidVolume change ({unit})', shrink=0.85, pad=0.02)
@@ -289,6 +304,59 @@ def _generate_gridmap_figure(ranking_df, metric, output_path, bin_size, min_coun
     plt.suptitle(f'pdfVolume / ellipsoidVolume change, pre-SSST → post-SSST\nmetric={metric}',
                  fontweight='bold')
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path)
+    plt.close(fig)
+
+
+def _generate_corr_matrix_figure(ranking_df, max_erh, max_erz, output_path):
+    """
+    Build and save a Pearson/Spearman correlation-matrix PDF over
+    ellipsoidVolume_post, pdfVolume_post, true_erh_post, true_erz_post,
+    restricted to events with true_erh_post <= max_erh and true_erz_post <= max_erz.
+    """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    mask = (ranking_df['true_erh_post'] <= max_erh) & (ranking_df['true_erz_post'] <= max_erz)
+    filtered = ranking_df[mask]
+
+    cols = ['ellipsoidVolume_post', 'pdfVolume_post', 'true_erh_post', 'true_erz_post']
+    labels = {
+        'ellipsoidVolume_post': 'Ellip. Volume',
+        'pdfVolume_post': 'PDF Volume',
+        'true_erh_post': 'Hor. Err.',
+        'true_erz_post': 'Ver. Err.',
+        'Psi': r'$\Psi$',
+        'C68': r'$C_{68}$',
+        'dip_stat': 'Dip stat.',
+    }
+    # Exploratory screening only. PDF_metrics.md (Bland & Altman 1986; Janse et al.
+    # 2021) is explicit that correlation is the wrong tool for assessing agreement
+    # between these metrics — this panel must not be cited as evidence that they do
+    # or do not agree.
+    cols += [c for c in ('Psi', 'C68', 'dip_stat') if c in ranking_df.columns]
+    pearson = filtered[cols].rename(columns=labels).corr(method='pearson')
+    spearman = filtered[cols].rename(columns=labels).corr(method='spearman')
+
+    sns.set_theme()
+    fig, axes = plt.subplots(1, 2, figsize=(14, 7))
+
+    sns.heatmap(pearson, annot=True, fmt='.2f', cmap='coolwarm', vmin=-1, vmax=1,
+                ax=axes[0], cbar_kws={'label': 'r coefficient'})
+    axes[0].set_title('Pearson')
+
+    sns.heatmap(spearman, annot=True, fmt='.2f', cmap='coolwarm', vmin=-1, vmax=1,
+                ax=axes[1], cbar_kws={'label': r'$\rho$ coefficient'})
+    axes[1].set_title('Spearman')
+
+    fig.suptitle('Correlation matrix (post-SSST)', fontweight='bold', fontsize=14, y=0.98)
+    fig.text(0.5, 0.915,
+             rf'ERH $\leq$ {max_erh} km & ERZ $\leq$ {max_erz} km '
+             rf'— {len(filtered)}/{len(ranking_df)} events',
+             ha='center', va='top', fontsize=10, fontweight='normal')
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig.tight_layout(rect=[0, 0, 1, 0.90])
     plt.savefig(output_path)
     plt.close(fig)
 
@@ -342,6 +410,13 @@ def generate_ranking(params):
             _generate_gridmap_figure(ranking_df, metric, figure_output, params.bin_size, params.min_count)
             print(f'Gridmap saved @ {figure_output}')
 
+    if params.corr_matrix:
+        corr_output = params.corr_matrix_output or os.path.join(
+            _MODULE_DIR, 'event_ranking', f'{params.run_name}_corr_matrix.pdf'
+        )
+        _generate_corr_matrix_figure(ranking_df, params.max_erh, params.max_erz, corr_output)
+        print(f'Correlation matrix saved @ {corr_output}')
+
     return {
         'output_path': output_path,
         'n_events': len(ranking_df),
@@ -392,6 +467,18 @@ def main():
                         help='Gridmap cell size in degrees (default: 0.02)')
     parser.add_argument('--min-count', type=int, default=10,
                         help='Minimum events per gridmap cell to display (default: 10)')
+    parser.add_argument('--corr-matrix', type=_str2bool, default=False,
+                        help='Save a Pearson/Spearman correlation-matrix PDF of ellipsoidVolume_post, '
+                             'pdfVolume_post, true_erh_post, true_erz_post (default: false)')
+    parser.add_argument('--max-erh', type=float, default=3.0,
+                        help='Max true_erh_post (km) for an event to be included in the '
+                             'correlation matrix (default: 3.0)')
+    parser.add_argument('--max-erz', type=float, default=3.0,
+                        help='Max true_erz_post (km) for an event to be included in the '
+                             'correlation matrix (default: 3.0)')
+    parser.add_argument('--corr-matrix-output', default=None,
+                        help='Correlation-matrix PDF path (default: '
+                             'complem_figures/event_ranking/<run-name>_corr_matrix.pdf)')
     args = parser.parse_args()
 
     generate_ranking(EventRankingParams(
@@ -407,6 +494,10 @@ def main():
         figure_output   = args.figure_output,
         bin_size        = args.bin_size,
         min_count       = args.min_count,
+        max_erh         = args.max_erh,
+        max_erz         = args.max_erz,
+        corr_matrix     = args.corr_matrix,
+        corr_matrix_output = args.corr_matrix_output,
     ))
 
 

@@ -27,10 +27,11 @@ import argparse
 import logging
 import math
 import os
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from obspy import read_inventory
+from obspy import UTCDateTime, read_inventory
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -39,6 +40,11 @@ from obspy import read_inventory
 _MODULE_DIR      = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT    = os.path.dirname(_MODULE_DIR)
 _DEFAULT_LOG_DIR = os.path.join(_MODULE_DIR, 'console_output')
+
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from fetch_inventory.merge_station_inventories import station_priority  # noqa: E402
 
 logger = logging.getLogger('generate_regional_runfiles')
 
@@ -88,8 +94,12 @@ def _setup_logger(log_dir):
 
 def _build_alternate_code_map(file_map):
     """
-    Parse the inventory map file and return a mapping from alternate code to
-    (network, station) tuple.
+    Parse the inventory map file and return a mapping from alternate code to the
+    list of (network, station) pairs it covers.
+
+    Most codes cover a single station; ~80 cover several merged within 20 m of each
+    other, and all of them are returned so that _find_station_info can choose between
+    them on the merge priority rather than on the order they happen to sit in the file.
 
     Parameters
     ----------
@@ -97,7 +107,7 @@ def _build_alternate_code_map(file_map):
 
     Returns
     -------
-    dict[str, (str, str)]
+    dict[str, list[(str, str)]]
     """
     with open(file_map, 'r') as f:
         lines = f.readlines()
@@ -106,7 +116,7 @@ def _build_alternate_code_map(file_map):
     for i, line in enumerate(lines):
         if line.startswith('Alternate'):
             alternate_code = line.split()[-1]
-            network_code   = station_code = None
+            stations       = []
             j = i + 1
             while j < len(lines):
                 code_line = lines[j]
@@ -115,9 +125,10 @@ def _build_alternate_code_map(file_map):
                 if code_line.startswith('  Station'):
                     station_code = code_line.split('.')[-1].rstrip('\n')
                     network_code = code_line.split(':')[-1].split('.')[0].strip()
+                    stations.append((network_code, station_code))
                 j += 1
-            if network_code is not None and station_code is not None:
-                code_map[alternate_code] = (network_code, station_code)
+            if stations:
+                code_map[alternate_code] = stations
     return code_map
 
 
@@ -126,18 +137,30 @@ def _find_station_info(inventory, alternate_code_map, alternate_code):
     Return (latitude, longitude, elevation_km) for a station identified by
     its alternate code.
 
+    When the code covers several co-located stations, the position and elevation come
+    from the one the merge would keep -- station_priority(), oldest start_date breaking
+    ties -- so that NonLinLoc is fed the same station that lends the code its label.
+    Resolving against the inventory rather than against the order of the map file keeps
+    this correct for a map written before the priority rule existed.
+
     Parameters
     ----------
     inventory          : obspy.Inventory
-    alternate_code_map : dict[str, (str, str)]
+    alternate_code_map : dict[str, list[(str, str)]]
     alternate_code     : str
 
     Returns
     -------
     (float, float, float) — lat, lon, elev_km
     """
-    codes   = alternate_code_map.get(alternate_code)
-    station = inventory.select(network=codes[0], station=codes[1]).networks[0].stations[0]
+    candidates = []
+    for network_code, station_code in alternate_code_map.get(alternate_code):
+        for network in inventory.select(network=network_code, station=station_code):
+            candidates.extend((network.code, station) for station in network)
+
+    _, station = min(candidates,
+                     key=lambda c: (station_priority(c[0], c[1].elevation, alternate_code),
+                                    c[1].start_date or UTCDateTime(datetime.max)))
     elev_km = (station.elevation / 1000
                if hasattr(station, 'elevation') and station.elevation is not None
                else 0.0)
@@ -311,6 +334,9 @@ def generate_run(parameters, log_dir=None):
     lines.append('VGTYPE P\n')
     lines.append(f'VGGRID  2 {parameters.VGGRID[0]} {parameters.VGGRID[1]}  0.0 0.0 -3  0.05 0.05 0.05  SLOW_LEN\n')
     lines.append('\n')
+    # Velocity model: Pyrenees_1D, from Souriau & Pauchet (1998).
+    # Duplicated as Pyrocko .nd files in temp_picks/models/ for the pick-association
+    # travel-time bands — keep the two in sync if this model ever changes.
     lines.append('LAYER    0.0  5.5 0.0       3.2   0.00   2.72 0.0\n')
     lines.append('LAYER    1    5.6 0.0       3.26  0.00  2.7 0.0\n')
     lines.append('LAYER    4    6.1 0.0       3.55  0.00  2.8 0.0\n')
@@ -323,7 +349,13 @@ def generate_run(parameters, log_dir=None):
 
     lines.append('# Bulletin to read and write\n')
     lines.append(f'LOCFILES {parameters.fileBulletinIn} NLLOC_OBS  {parameters.fileTime}  {parameters.fileBulletinOut}\n')
-    lines.append('LOCHYPOUT SAVE_NLLOC_SUM\n')
+    # SAVE_NLLOC_EXPECTATION reports the PDF expectation as the hypocenter instead
+    # of the maximum-likelihood point, re-solving origin time, RMS, residuals, Gap
+    # and Dist there. The confidence ellipsoid is a second moment about the
+    # expectation, so this is what puts the published location and the published
+    # error on the same point. The ML solution survives on the .hyp
+    # MAXIMUM_LIKELIHOOD line.
+    lines.append('LOCHYPOUT SAVE_NLLOC_SUM  SAVE_NLLOC_EXPECTATION\n')
     lines.append('\n')
 
     lines.append('# Localization method\n')

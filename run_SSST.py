@@ -35,6 +35,9 @@ After all zones complete (all final CSVs present):
      duplicates resolved by lowest pdfVolume).
   7. Rematches relocated events to obs/NLL_result_augmented.obs via publicId
      and writes obs/SSST_result.obs.
+  8. Annotates RESULT/SSST_result.csv in place with the location-PDF quality
+     metrics read from the final iteration's .scat clouds
+     (NLL_run/pdf_metrics.py). Non-fatal and idempotent.
 
 Usage
 -----
@@ -55,6 +58,7 @@ from NLL_run.reformate_obs          import ReformateObsParams, reformate_obs
 from NLL_run.run_ssst               import SSSTRunParams, build_grids, run_ssst
 from NLL_run.merge_regional_results import merge_bulletins
 from NLL_run.match_pre_post_relocation import MatchCatalogsParams, save_bulletin
+from NLL_run.pdf_metrics            import PdfMetricsParams, compute_metrics
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -250,6 +254,23 @@ def run_pipeline(zones=None, iteration_start=0, iteration_stop=None,
         file_final = os.path.join(_RESULT, 'SSST_result.csv'),
         save_file  = os.path.join(_OBS, 'SSST_result.obs'),
     ))
+
+    # --- location-PDF quality metrics, appended in place to the merged CSV.
+    # Kept non-fatal: the campaign's results are already written at this
+    # point, and a metrics failure must not make a multi-hour run look like
+    # it failed. The step is idempotent, so it can simply be rerun.
+    try:
+        compute_metrics(PdfMetricsParams(
+            result_csv = os.path.join(_RESULT, 'SSST_result.csv'),
+            ssst_root  = _SSST_LOC,
+            run_name   = RUN_NAME,
+            zones      = list(_ZONES),
+        ))
+    except Exception as exc:
+        print(f'PDF metrics failed ({exc.__class__.__name__}: {exc})\n'
+              f'  RESULT/SSST_result.csv and obs/SSST_result.obs are complete, '
+              f'only the quality columns are missing. Rerun with:\n'
+              f'    python NLL_run/pdf_metrics.py --run-name {RUN_NAME}')
 
 
 # ---------------------------------------------------------------------------

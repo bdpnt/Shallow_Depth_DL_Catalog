@@ -9,6 +9,15 @@ probability-density volume indicates a tighter, better-constrained location.
 
 Zones can be supplied in any order; no adjacency constraint is needed.
 
+The reported hypocenter is the location-PDF *expectation*, not the maximum-
+likelihood point: NLLoc runs with `LOCHYPOUT ... SAVE_NLLOC_EXPECTATION`, which
+re-solves origin time, RMS, residuals, Gap and Dist at the expectation. That is
+what puts the published location and the published error on the same point —
+the confidence ellipsoid this module turns into true_erh/true_erz is a second
+moment *about* the expectation, so quoting it for the mode was quoting an
+ellipsoid that is not centred on the point it belongs to. The maximum-likelihood
+solution is preserved in the maxlike_* columns, read from the summary .hyp.
+
 Usage
 -----
     python NLL_run/merge_regional_results.py \\
@@ -84,11 +93,23 @@ def _build_covariance(az1, dip1, len1, az2, dip2, len2, len3):
     R = np.column_stack([v1, v2, v3])
     return R @ R.T
 
-# 68% chi-square factors used to convert between NLLoc's 3-DOF ellipsoid
+# One-sigma chi-square factors used to convert between NLLoc's 3-DOF ellipsoid
 # scaling and the DOF-appropriate scaling for each derived quantity.
-_S1_1DOF = chi2dist.ppf(0.68, df=1)   # ERZ: 1-DOF marginal std dev
-_S2_2DOF = chi2dist.ppf(0.68, df=2)   # ERH: 2-DOF horizontal error ellipse
-_S3_3DOF = chi2dist.ppf(0.68, df=3)   # NLLoc's own ellipsoid-axis scaling
+#
+# The coverage is erf(1/sqrt(2)) = 0.6827, i.e. exactly one sigma, not a flat
+# 0.68: the two differ by 1.1% in chi-square at 1 DOF (0.9889 vs 1.0000), and
+# 0.68 is the value that makes the 1-DOF factor miss unity.
+_NOMINAL_COVERAGE = 0.6827            # erf(1/sqrt(2)), one-sigma coverage
+_S1_1DOF = chi2dist.ppf(_NOMINAL_COVERAGE, df=1)   # ERZ: 1-DOF marginal std dev
+_S2_2DOF = chi2dist.ppf(_NOMINAL_COVERAGE, df=2)   # ERH: 2-DOF horizontal error ellipse
+
+# NLLoc's own ellipsoid-axis scaling. Not a free choice — this factor exists only
+# to be divided back out, so it must be the literal the binary applied:
+# `#define DELTA_CHI_SQR_68_3 3.53` (matrix_statistics.h:31, quoted from Numerical
+# Recipes 2nd ed. sec 15.6), passed to CalcErrorEllipsoid at NLLocLib.c:404. That
+# is the one-sigma table value rounded to 3 figures; chi2.ppf(0.6827, df=3) gives
+# 3.5267, which is right in principle but 0.09% off what actually scaled the axes.
+_S3_3DOF = 3.53
 
 def _compute_true_erz(az1, dip1, len1, az2, dip2, len2, len3):
     """1-DOF, 68% confidence vertical standard deviation (km)."""
@@ -103,6 +124,73 @@ def _compute_true_erh(az1, dip1, len1, az2, dip2, len2, len3):
     eigvals = np.linalg.eigvalsh(cov2d)   # ascending: [minor^2, major^2], unscaled
     b, a = np.sqrt(eigvals * _S2_2DOF)    # b = minor semi-axis, a = major semi-axis
     return float(np.sqrt(a * b))
+
+
+# ---------------------------------------------------------------------------
+# Maximum-likelihood hypocenter — recovered from the summary .hyp
+# ---------------------------------------------------------------------------
+
+# Both stages run NLLoc with LOCHYPOUT ... SAVE_NLLOC_EXPECTATION, so the
+# reported hypocenter is the PDF expectation and the CSV's latitude/longitude/
+# depth are identical to its expect_lat/expect_lon/expect_z. The maximum-
+# likelihood point is not in the CSV at all: NLLoc writes it only to the .hyp,
+# as `MAXIMUM_LIKELIHOOD  MaxLikeLat .. Long .. Depth .. OT ..` (GridLib.c:3511).
+# It is recovered here so the final bulletin can publish both estimates.
+
+def _read_maxlike(csv_path):
+    """
+    Map publicId -> (lat, lon, depth_km, ot_sec) from the summary .hyp beside a zone CSV.
+
+    The summary .hyp sits next to the summary CSV under the same root and holds
+    one block per event with no PHASE lines, so a single sequential pass is enough.
+
+    `ot_sec` is seconds within the minute only — NLLoc calls hypotime2hrminsec
+    before overwriting the origin time with the expectation's, so the hour and
+    minute of the ML solution are not written out. Callers reconstruct the full
+    timestamp against the expectation origin (see export_quakeml._maxlike_time).
+
+    Raises FileNotFoundError / ValueError when the run was not made in expectation
+    mode — silence there would let a mis-configured campaign run for days.
+    """
+    hyp_path = csv_path[:-len('.csv')] + '.hyp'
+    if not os.path.isfile(hyp_path):
+        raise FileNotFoundError(
+            f'{hyp_path} not found — the maximum-likelihood hypocenter is read from '
+            f'the summary .hyp beside each zone CSV')
+
+    maxlike   = {}
+    public_id = None
+    with open(hyp_path) as fh:
+        for line in fh:
+            if line.startswith('PUBLIC_ID'):
+                public_id = line.split()[1]
+            elif line.startswith('MAXIMUM_LIKELIHOOD'):
+                fields = line.split()
+                maxlike[public_id] = (float(fields[2]), float(fields[4]),
+                                      float(fields[6]), float(fields[8]))
+
+    if not maxlike:
+        raise ValueError(
+            f'{hyp_path} holds no MAXIMUM_LIKELIHOOD line — that line is written only '
+            f'when NLLoc runs with `LOCHYPOUT ... SAVE_NLLOC_EXPECTATION`, which is '
+            f'also what makes the reported hypocenter the PDF expectation')
+
+    return maxlike
+
+
+_MAXLIKE_COLUMNS = ['maxlike_latitude', 'maxlike_longitude',
+                    'maxlike_depth', 'maxlike_ot_sec']
+
+
+def _attach_maxlike(df, csv_path):
+    """Add the four maxlike_* columns to one zone frame, in place."""
+    maxlike = _read_maxlike(csv_path)
+    values  = [maxlike.get(pid, (np.nan,) * 4) for pid in df['publicId']]
+    df[_MAXLIKE_COLUMNS] = pd.DataFrame(values, index=df.index)
+
+    n_missing = int(df['maxlike_latitude'].isna().sum())
+    if n_missing:
+        logger.warning(f'{csv_path}: {n_missing} events with no MAXIMUM_LIKELIHOOD block')
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +221,7 @@ def merge_bulletins(csv_files, output_path, log_dir=None):
     for path in csv_files:
         df = pd.read_csv(path, skipinitialspace=True)
         df['_source'] = os.path.basename(os.path.dirname(path))
+        _attach_maxlike(df, path)
         frames.append(df)
         logger.info(f"Loaded {len(df):>5d} events from {path!r}")
 
@@ -169,6 +258,13 @@ def merge_bulletins(csv_files, output_path, log_dir=None):
     )
     merged['true_erz'] = merged.apply(
         lambda r: _compute_true_erz(*r[_ell_args]), axis=1
+    )
+
+    # Volume of the confidence ellipsoid, for comparison against pdfVolume (NLLoc's
+    # OCT-tree-integrated PDF volume) — the two diverge for non-Gaussian events.
+    merged['ellipsoidVolume'] = (
+        4 / 3 * np.pi
+        * merged['EllipsoidLen1'] * merged['EllipsoidLen2'] * merged['EllipsoidLen3']
     )
 
     merged = merged.sort_values('date-time').rename(columns={'_source': 'source'})

@@ -16,8 +16,9 @@ localization parameters are reused verbatim, so the zone information entered
 once in run_NLL.py stays the single source of truth (and the TRANS of the two
 control files can never diverge). Only the statements that differ for SSST
 are rewritten: grid paths (run/ssst_model, run/ssst_time), the GTSRCE include,
-and LOCHYPOUT (SAVE_NLLOC_ALL, without the SAVE_NLLOC_OCTREE/SAVE_FMAMP flags
-that run_ssst.py appends itself on the final iteration only).
+and LOCHYPOUT (SAVE_NLLOC_ALL + SAVE_NLLOC_EXPECTATION, without the
+SAVE_NLLOC_OCTREE/SAVE_FMAMP flags that run_ssst.py appends itself on the final
+iteration only).
 
 The Loc2ssst LSGRID/LSOUTGRID are computed from the parsed LOCGRID extent,
 rescaled to a coarse 1.0 km spacing (Loc2ssst holds two full LSGRID buffers
@@ -154,7 +155,8 @@ def _transform_nll_runfile(nll_lines, parameters):
             # must NOT contain SAVE_NLLOC_OCTREE / SAVE_FMAMP: run_ssst.py
             # appends the authoritative LOCHYPOUT (NLL keeps the last one)
             # and adds those flags on the final iteration only
-            out.append('LOCHYPOUT SAVE_NLLOC_ALL  NLL_FORMAT_VER_2\n')
+            out.append('LOCHYPOUT SAVE_NLLOC_ALL  NLL_FORMAT_VER_2  '
+                       'SAVE_NLLOC_EXPECTATION\n')
         elif stripped.startswith('LOCFILES'):
             out.append('# LOCFILES appended per NLLoc chunk by run_ssst.py\n')
         elif stripped.startswith('LOCMETH'):

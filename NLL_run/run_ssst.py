@@ -299,7 +299,11 @@ def _run_nlloc_parallel(params, control_file_tmp, out_root, loc_obs, time_root,
         #               SSST-corrected grids afterwards), chunk output root
         #   LOCMETH   - EDT location method: min phases and Vp/Vs ratio
         #               (-9.99 = use S travel-time grids, no fixed ratio)
-        #   LOCHYPOUT - oct-tree grids and fmamp only on the final iteration
+        #   LOCHYPOUT - oct-tree grids and fmamp only on the final iteration;
+        #               SAVE_NLLOC_EXPECTATION on every iteration, so the reported
+        #               hypocenter is the PDF expectation the confidence ellipsoid
+        #               is actually built around, and the residuals Loc2ssst turns
+        #               into corrections are the ones evaluated there
         out_root_idx = f'{out_root}_{index}'
         with open(control_file_idx, 'a') as f:
             f.write(f'LOCCOM {params.runName} {params.ssstModelName} '
@@ -307,7 +311,7 @@ def _run_nlloc_parallel(params, control_file_tmp, out_root, loc_obs, time_root,
             f.write(f'LOCFILES {obsfiles_dir}/*.nlloc_obs NLLOC_OBS  {time_root}  '
                     f'{out_root_idx}/{params.projectName}  0\n')
             f.write(f'LOCMETH EDT_OT_WT 9999.0 {min_num_phases_loc} -1 -1 {vpvs} 145 -1 1\n')
-            f.write(f'LOCHYPOUT SAVE_NLLOC_ALL  NLL_FORMAT_VER_2  '
+            f.write(f'LOCHYPOUT SAVE_NLLOC_ALL  NLL_FORMAT_VER_2  SAVE_NLLOC_EXPECTATION  '
                     f'{save_nlloc_octree} {save_fmamp}\n')
 
         # start NLLoc detached; its console output goes to a per-chunk log
