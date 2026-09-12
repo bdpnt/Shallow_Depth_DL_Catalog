@@ -435,11 +435,20 @@ def generate_figure(parameters):
                 cval = data[:, 2]
 
     if plot_coupe:
+        # 1:1 aspect. The panel keeps a fixed plotted width and takes whatever
+        # height the depth range needs at the same cm/km, so distance and depth
+        # are on one scale. A fixed height instead made the vertical
+        # exaggeration a side effect of --length and --depth-max: 0.65x on a
+        # 12 x 13 km section, 1.67x on a 50 x 21 km one.
+        panel_top    = -1.0   # km, panel top (above sea level)
+        panel_width  = 10.0   # cm
+        panel_height = panel_width * (parameters.prof_coupe - panel_top) / parameters.longueur_coupe
         if parameters.draw_map:
-            fig.shift_origin(yshift='-10c')   # drop below the map; alone, it starts at the origin
+            # Drop below the map, keeping the same gap whatever the panel height.
+            fig.shift_origin(yshift=f'-{panel_height + 3.0}c')
         fig.basemap(
-            projection = 'X10/-7',
-            region     = [0, parameters.longueur_coupe, -1, parameters.prof_coupe],
+            projection = f'X{panel_width}/-{panel_height}',
+            region     = [0, parameters.longueur_coupe, panel_top, parameters.prof_coupe],
             frame      = ['xafg100+lDistance (km)', 'yafg50+lDepth (km)', 'WSen'],
         )
 
@@ -458,8 +467,10 @@ def generate_figure(parameters):
                           reverse=style['reverse'])
             fig.plot(x=X[order], y=Z[order], style='c0.15c',
                      fill=shown, cmap=True, pen='0.25p,black')
+            # Never taller than the panel: at 1:1 a long shallow section can be
+            # shorter than the 5 cm the bar would otherwise take.
             fig.colorbar(frame=[f"af+l{style['label']}"],
-                         position='JMR+w5c/0.5c+o0.5c/0c')
+                         position=f'JMR+w{min(5.0, panel_height)}c/0.5c+o0.5c/0c')
 
     if not plot_coupe and not parameters.draw_map:
         raise RuntimeError('Nothing to draw: no event projected onto the cross-section '
