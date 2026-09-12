@@ -2,13 +2,18 @@
 plot_pdf_cloud_report.py
 ============================
 Report-ready 2-D counterpart of `plot_pdf_cloud.py`: the NLLoc location PDF of a
-single event, one iteration, drawn as two static panels instead of an
-interactive 3D scene.
+single event, one iteration, drawn as static panels instead of an interactive
+3D scene.
 
     left   map view          longitude / latitude, always 1:1
     right  vertical section  depth against the horizontal direction in which the
                              confidence ellipsoid is widest (NLLoc's
                              `azMaxHorUnc` direction)
+
+`--panels map` or `--panels section` draws one of the two alone, at a figure size
+of its own; the default output name then carries the layout as a suffix, so the
+three variants do not overwrite one another. A map-only figure drops the A-A'
+trace, which would otherwise promise a section that is not in the figure.
 
 The section fills its panel when the cloud is wider than it is deep, which means
 vertical exaggeration; the factor is measured off the drawn axes and written on
@@ -38,19 +43,17 @@ Two points of interpretation
    here only to make the shape of the mode easier to read. `--color none`
    disables it.
 
-   That fourth field is the *natural logarithm* of the unnormalised posterior,
-   not the posterior itself. This is an inference from the files, not something
-   the repository documents: the values of a typical cloud span ~110-119, they
-   peak at the maximum-likelihood point, and read as a density they would imply
-   a 7 % variation across a 9 km-deep, visibly non-Gaussian cloud, whereas read
-   as a log they imply a factor ~7000 — which is what an oct-tree sample set of
-   a one-sigma region should show. Confirmed independently: NLLoc draws its
-   samples with density proportional to the posterior, and the field correlates
-   +0.93 (Spearman +0.95) with the log of a 12-nearest-neighbour density
-   estimate over the cloud. Samples are therefore coloured by
-   ln(PDF / PDF_max), so 0 is the mode of the sampled posterior and -x is a
-   density e^-x times it. Pass `--color linear` to treat the field as a density
-   instead, if that inference turns out to be wrong.
+   That fourth field is `pnode->value` (NLLocLib.c:14926-14930, v7.1.05): the
+   natural logarithm of the unnormalised posterior density in the sample's cell,
+   PLUS the station-proximity term NLLoc adds when `LOCSEARCH OCT`'s
+   `useStationsDensity` is 1, which it is in this project. It is therefore not
+   ln(PDF): it is ln(PDF x station weight), and the colour bar says "sample
+   value" rather than naming the PDF for that reason. Writing q for that weighted
+   density, samples are coloured by ln(q_i / q_max), the value at the sample's
+   cell relative to the largest in the cloud : 0 is the brightest sample and -x is
+   e^-x times it. Taking a ratio is what makes the quantity well defined, since q
+   itself is never normalised and the missing constant cancels. `--color linear` treats the field as a density instead;
+   `--color none` drops the colouring.
 
 Which point is the mode
 -----------------------
@@ -74,6 +77,10 @@ Usage
     python complem_figures/plot_pdf_cloud_report.py \\
         --hyp run/ssst_loc/ssst_run1/Pyrenees_2_SSST/loc_ssst_corr5/GLOBAL_2/Pyrenees_2.20180504.051742.grid0.loc.hyp \\
         --output /tmp/event.png
+
+    python complem_figures/plot_pdf_cloud_report.py \\
+        --run-name ssst_run1 --event-id PYRENEES_048997 --zone 1 \\
+        --panels section --true-scale
 
 Writes a 300 dpi PNG and a vector PDF of the same name.
 """
@@ -307,6 +314,9 @@ _STYLE = {
     'grid.linewidth': 0.6,
 }
 
+_MAX_BOX_H = 5.0       # inches; a single fixed-scale panel is narrowed past this
+_MIN_FIG_W = 6.4       # inches; below this the bottom legend no longer fits
+
 _ELLIPSE_COLOR = '#222222'
 _EXPECT_COLOR = '#C44E52'
 _SECTION_LINE_COLOR = '#777777'
@@ -324,6 +334,13 @@ def _draw_outline(ax, x, y, dashed=False, label=None):
     ax.plot(x, y, color='white', lw=2.6, solid_capstyle='round', zorder=4)
     ax.plot(x, y, color=_ELLIPSE_COLOR, lw=1.2,
             linestyle='--' if dashed else '-', zorder=5, label=label)
+
+
+def _span(groups, margin=0.06):
+    """Extent of the padded axis range these value groups would produce."""
+    v = np.concatenate([np.ravel(np.asarray(g, dtype=float)) for g in groups])
+    lo, hi = float(v.min()), float(v.max())
+    return (hi - lo) * (1.0 + 2.0 * margin)
 
 
 def _set_limits(ax, x_groups, y_groups, margin=0.06):
@@ -357,7 +374,7 @@ def _clip_line_to_axes(ax, point, direction):
 
 def _draw_markers(ax, expect_xy, maxlike_xy):
     ax.plot(*expect_xy, marker='o', ms=7, mfc=_EXPECT_COLOR, mec='white', mew=1.2,
-            ls='none', zorder=7, label='PDF expectation (ellipsoid centre)')
+            ls='none', zorder=7, label='Expectation (cloud mean, ellipsoid centre)')
     ax.plot(*maxlike_xy, marker='D', ms=6.5, mfc='white', mec='black', mew=1.2,
             ls='none', zorder=7, label='Maximum-likelihood hypocentre')
 
@@ -380,6 +397,7 @@ class PdfCloudReportParams:
     marginal: bool = False
     section_line: bool = True
     true_scale: bool = False       # True -> section at 1:1, at the cost of empty panel
+    panels: str = 'both'           # 'both' | 'map' | 'section'
     output: str = None
 
 
@@ -415,20 +433,70 @@ def _build_figure(cloud, center, cov, info, params, iter_label):
     ellm_v = _ellipse_offsets(cov_sz, k2)
 
     # --- draw ---------------------------------------------------------------
+    show_map = params.panels in ('both', 'map')
+    show_sec = params.panels in ('both', 'section')
+
     with plt.rc_context(_STYLE):
-        fig = plt.figure(figsize=(9.2, 5.6))
         has_cbar = params.color_by != 'none'
-        gs = fig.add_gridspec(1, 2, left=0.085, right=0.875 if has_cbar else 0.975,
-                              bottom=0.155, top=0.845, wspace=0.30)
-        ax_map = fig.add_subplot(gs[0])
-        ax_sec = fig.add_subplot(gs[1])
+        # geometry per layout: figure size, gridspec margins, colour-bar rectangle
+        if params.panels == 'both':
+            figsize, left, right = (9.2, 5.6), 0.085, (0.875 if has_cbar else 0.975)
+            bottom, top, wspace = 0.155, 0.845, 0.30
+            cax_rect = [0.905, 0.26, 0.016, 0.44]
+        elif params.panels == 'map':
+            figsize, left, right = (5.6, 6.0), 0.155, (0.795 if has_cbar else 0.965)
+            bottom, top, wspace = 0.145, 0.855, 0.0
+            cax_rect = [0.840, 0.27, 0.026, 0.44]
+        else:
+            figsize, left, right = (7.8, 5.0), 0.105, (0.825 if has_cbar else 0.975)
+            bottom, top, wspace = 0.175, 0.825, 0.0
+            cax_rect = [0.870, 0.25, 0.020, 0.48]
+
+        # A single panel drawn at a fixed scale sets its own height : otherwise the
+        # axes box shrinks to satisfy the aspect and the rest of the figure is blank.
+        fixed_scale = (params.panels == 'map') or (params.panels == 'section' and params.true_scale)
+        if params.panels != 'both' and fixed_scale:
+            if params.panels == 'map':
+                dx = _span([lon, ell_h_lon])
+                dy = _span([lat, ell_h_lat]) / np.cos(np.radians(c_lat))
+            else:
+                dx = _span([s, ell_v[:, 0]])
+                dy = _span([z, ell_v[:, 1] + center[2]])
+            band = (1.0 - (top - bottom)) * figsize[1]      # inches of title, labels, legend
+            below = bottom * figsize[1]
+            box_w = (right - left) * figsize[0]
+            box_h = box_w * (dy / dx)
+            # a panel taller than this is narrowed rather than grown, so that a deep,
+            # narrow cloud does not produce a figure two pages long
+            if box_h > _MAX_BOX_H:
+                fig_w0, side = figsize[0], (1.0 - (right - left)) * figsize[0]
+                lft, rgt = left * fig_w0, (1.0 - right) * fig_w0
+                cbar_in, cbw_in = (1.0 - cax_rect[0]) * fig_w0, cax_rect[2] * fig_w0
+                box_w = max(box_w * _MAX_BOX_H / box_h, _MIN_FIG_W - side)
+                fig_w = box_w + side
+                left, right = lft / fig_w, 1.0 - rgt / fig_w
+                cax_rect = [1.0 - cbar_in / fig_w, cax_rect[1], cbw_in / fig_w, cax_rect[3]]
+                figsize = (fig_w, figsize[1])
+                box_h = box_w * (dy / dx)
+            fig_h = float(np.clip(box_h + band, 2.9, _MAX_BOX_H + band))
+            box_h = fig_h - band
+            bottom, top = below / fig_h, (below + box_h) / fig_h
+            cax_rect = [cax_rect[0], bottom + 0.10 * box_h / fig_h,
+                        cax_rect[2], 0.80 * box_h / fig_h]
+            figsize = (figsize[0], fig_h)
+
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(1, 2 if params.panels == 'both' else 1,
+                              left=left, right=right, bottom=bottom, top=top, wspace=wspace)
+        ax_map = fig.add_subplot(gs[0]) if show_map else None
+        ax_sec = fig.add_subplot(gs[1 if params.panels == 'both' else 0]) if show_sec else None
 
         if params.color_by == 'log':
             cvals = pdf - pdf.max()          # ln PDF relative to the mode, in nats
-            cbar_label = r'$\ln\,(\mathrm{PDF}\,/\,\mathrm{PDF}_{\max})$'
+            cbar_label = r'$\ln\,(q_i\,/\,q_{\max})$'
         elif params.color_by == 'linear':
             cvals = pdf / pdf.max()
-            cbar_label = 'PDF value (normalised)'
+            cbar_label = r'$q_i\,/\,q_{\max}$'
         else:
             cvals = None
 
@@ -439,66 +507,84 @@ def _build_figure(cloud, center, cov, info, params, iter_label):
             order = np.arange(n)
             sc_kw = dict(color='#4C72B0')
 
-        sc = ax_map.scatter(np.asarray(lon)[order], np.asarray(lat)[order],
-                            s=14, alpha=0.85, linewidths=0, zorder=2, **sc_kw)
-        ax_sec.scatter(s[order], z[order], s=14, alpha=0.85, linewidths=0, zorder=2, **sc_kw)
+        # the legend is built from whichever panel is drawn first
+        lab_map = not show_sec
+        sc = None
 
         # --- map panel ---
-        if params.marginal:
-            _draw_outline(ax_map, ellm_h_lon, ellm_h_lat, dashed=True)
-        _draw_outline(ax_map, ell_h_lon, ell_h_lat)
-        _draw_markers(ax_map, (c_lon, c_lat), (m_lon, m_lat))
+        if show_map:
+            sc = ax_map.scatter(np.asarray(lon)[order], np.asarray(lat)[order],
+                                s=14, alpha=0.85, linewidths=0, zorder=2, **sc_kw)
+        if show_sec:
+            sc_s = ax_sec.scatter(s[order], z[order], s=14, alpha=0.85, linewidths=0,
+                                  zorder=2, **sc_kw)
+            sc = sc if sc is not None else sc_s
 
-        _set_limits(ax_map, [lon, ell_h_lon], [lat, ell_h_lat])
-        if params.section_line:
-            # direction of the section in lon/lat, taken from the projection itself so
-            # that it carries the Lambert meridian convergence exactly
-            d_lon, d_lat = to_geo.transform(center[0] + u[0], center[1] + u[1])
-            d = (float(d_lon) - float(c_lon), float(d_lat) - float(c_lat))
-            (ax_lon, ay_lat), (bx_lon, by_lat) = _clip_line_to_axes(ax_map, (c_lon, c_lat), d)
-            ax_map.plot([ax_lon, bx_lon], [ay_lat, by_lat],
-                        color=_SECTION_LINE_COLOR, lw=0.9, ls=(0, (5, 4)), zorder=3)
-            for lbl, xx, yy, off in (("A", ax_lon, ay_lat, (-12, 3)),
-                                     ("A′", bx_lon, by_lat, (5, -10))):
-                ax_map.annotate(lbl, (xx, yy), textcoords='offset points', xytext=off,
-                                color=_SECTION_LINE_COLOR, fontsize=8, fontweight='bold',
-                                zorder=6, annotation_clip=False)
+        if show_map:
+            if params.marginal:
+                _draw_outline(ax_map, ellm_h_lon, ellm_h_lat, dashed=True,
+                              label=f'{conf:.0%} marginal ellipse (2 d.o.f.)' if lab_map else None)
+            _draw_outline(ax_map, ell_h_lon, ell_h_lat,
+                          label=f'{conf:.0%} confidence ellipsoid, projected' if lab_map else None)
+            _draw_markers(ax_map, (c_lon, c_lat), (m_lon, m_lat))
 
-        ax_map.set_xlabel('Longitude (°E)')
-        ax_map.set_ylabel('Latitude (°N)')
-        ax_map.set_title('Map view', pad=6)
-        ax_map.set_aspect(1.0 / np.cos(np.radians(c_lat)), adjustable='box')
-        ax_map.set_anchor('N')
-        span = max(np.ptp(ax_map.get_xlim()), np.ptp(ax_map.get_ylim()))
-        dec = 3 if span < 0.05 else (2 if span < 0.5 else 1)
-        ax_map.xaxis.set_major_formatter(FormatStrFormatter(f'%.{dec}f'))
-        ax_map.yaxis.set_major_formatter(FormatStrFormatter(f'%.{dec}f'))
-        ax_map.xaxis.set_major_locator(MaxNLocator(4))
-        ax_map.yaxis.set_major_locator(MaxNLocator(5))
-        _tidy(ax_map)
+            _set_limits(ax_map, [lon, ell_h_lon], [lat, ell_h_lat])
+            # the A–A′ trace promises a section, so it is drawn only when there is one
+            if params.section_line and show_sec:
+                # direction of the section in lon/lat, taken from the projection itself
+                # so that it carries the Lambert meridian convergence exactly
+                d_lon, d_lat = to_geo.transform(center[0] + u[0], center[1] + u[1])
+                d = (float(d_lon) - float(c_lon), float(d_lat) - float(c_lat))
+                (ax_lon, ay_lat), (bx_lon, by_lat) = _clip_line_to_axes(ax_map, (c_lon, c_lat), d)
+                ax_map.plot([ax_lon, bx_lon], [ay_lat, by_lat],
+                            color=_SECTION_LINE_COLOR, lw=0.9, ls=(0, (5, 4)), zorder=3)
+                for lbl, xx, yy, off in (("A", ax_lon, ay_lat, (-12, 3)),
+                                         ("A′", bx_lon, by_lat, (5, -10))):
+                    ax_map.annotate(lbl, (xx, yy), textcoords='offset points', xytext=off,
+                                    color=_SECTION_LINE_COLOR, fontsize=8, fontweight='bold',
+                                    zorder=6, annotation_clip=False)
+
+            ax_map.set_xlabel('Longitude (°E)')
+            ax_map.set_ylabel('Latitude (°N)')
+            ax_map.set_title('Map view', pad=6)
+            ax_map.set_aspect(1.0 / np.cos(np.radians(c_lat)), adjustable='box')
+            ax_map.set_anchor('N')
+            span = max(np.ptp(ax_map.get_xlim()), np.ptp(ax_map.get_ylim()))
+            dec = 3 if span < 0.05 else (2 if span < 0.5 else 1)
+            ax_map.xaxis.set_major_formatter(FormatStrFormatter(f'%.{dec}f'))
+            ax_map.yaxis.set_major_formatter(FormatStrFormatter(f'%.{dec}f'))
+            ax_map.xaxis.set_major_locator(MaxNLocator(4))
+            ax_map.yaxis.set_major_locator(MaxNLocator(5))
+            _tidy(ax_map)
 
         # --- section panel ---
-        ell_v_z = ell_v[:, 1] + center[2]
-        if params.marginal:
-            _draw_outline(ax_sec, ellm_v[:, 0], ellm_v[:, 1] + center[2], dashed=True,
-                          label=f'{conf:.0%} marginal ellipse (2 d.o.f.)')
-        _draw_outline(ax_sec, ell_v[:, 0], ell_v_z,
-                      label=f'{conf:.0%} confidence ellipsoid, projected')
-        _draw_markers(ax_sec, (0.0, center[2]), (s_max, info['maxlike'][2]))
+        if show_sec:
+            ell_v_z = ell_v[:, 1] + center[2]
+            if params.marginal:
+                _draw_outline(ax_sec, ellm_v[:, 0], ellm_v[:, 1] + center[2], dashed=True,
+                              label=f'{conf:.0%} marginal ellipse (2 d.o.f.)')
+            _draw_outline(ax_sec, ell_v[:, 0], ell_v_z,
+                          label=f'{conf:.0%} confidence ellipsoid, projected')
+            _draw_markers(ax_sec, (0.0, center[2]), (s_max, info['maxlike'][2]))
 
-        _set_limits(ax_sec, [s, ell_v[:, 0]], [z, ell_v_z])
-        ax_sec.set_xlabel(f"Distance along A–A′, N{az:.0f}°E (km)")
-        ax_sec.set_ylabel('Depth (km)')
-        ax_sec.set_title(f'Vertical section along A–A′ (N{az:.0f}°E)', pad=6)
-        ax_sec.invert_yaxis()
-        if params.true_scale:
-            ax_sec.set_aspect('equal', adjustable='box')
-            ax_sec.set_anchor('N')
-        _tidy(ax_sec)
+            _set_limits(ax_sec, [s, ell_v[:, 0]], [z, ell_v_z])
+            if show_map:
+                ax_sec.set_xlabel(f"Distance along A–A′, N{az:.0f}°E (km)")
+                ax_sec.set_title(f'Vertical section along A–A′ (N{az:.0f}°E)', pad=6)
+            else:
+                ax_sec.set_xlabel(f"Distance along N{az:.0f}°E (km)")
+                ax_sec.set_title('Vertical section along the widest direction '
+                                 'of the ellipsoid', pad=6)
+            ax_sec.set_ylabel('Depth (km)')
+            ax_sec.invert_yaxis()
+            if params.true_scale:
+                ax_sec.set_aspect('equal', adjustable='box')
+                ax_sec.set_anchor('N')
+            _tidy(ax_sec)
 
         # --- colour bar, in its own axes so the panels keep their aspect ---
         if has_cbar:
-            cax = fig.add_axes([0.905, 0.26, 0.016, 0.44])
+            cax = fig.add_axes(cax_rect)
             cbar = fig.colorbar(sc, cax=cax)
             cbar.set_label(cbar_label)
             cbar.outline.set_linewidth(0.6)
@@ -506,7 +592,7 @@ def _build_figure(cloud, center, cov, info, params, iter_label):
         # --- titles carry the statistics, so nothing is written over the data ---
         dh = np.hypot(info['maxlike'][0] - center[0], info['maxlike'][1] - center[1])
         dz = info['maxlike'][2] - center[2]
-        line2 = f'{n} PDF samples'
+        line2 = f'{n} samples'
         if info['max_hor_unc'] is not None:
             line2 += (f" · horizontal semi-axes {info['min_hor_unc']:.2f}/{info['max_hor_unc']:.2f} km"
                       f" · vertical semi-axis {np.sqrt(k3 * cov[2, 2]):.2f} km")
@@ -518,7 +604,7 @@ def _build_figure(cloud, center, cov, info, params, iter_label):
             fontsize=9.5, y=0.975, linespacing=1.5,
         )
 
-        handles, labels = ax_sec.get_legend_handles_labels()
+        handles, labels = (ax_sec if show_sec else ax_map).get_legend_handles_labels()
         fig.legend(handles, labels, loc='lower center', ncol=len(labels),
                    frameon=False, bbox_to_anchor=(0.5, 0.005), handletextpad=0.5,
                    columnspacing=1.6)
@@ -528,7 +614,7 @@ def _build_figure(cloud, center, cov, info, params, iter_label):
         # drawn axes and state it, rather than leaving the reader to assume 1:1.
         # Depth is never compressed: a ratio below 1 would flatten the coordinate the
         # figure exists to show, and the empty space it avoids is horizontal anyway.
-        if not params.true_scale:
+        if show_sec and not params.true_scale:
             fig.canvas.draw()
             box = ax_sec.get_window_extent()
             ve = ((box.height / abs(np.ptp(ax_sec.get_ylim())))
@@ -600,8 +686,9 @@ def generate_figure(params):
 
     fig = _build_figure(cloud, center, cov, info, params, iter_label)
 
+    suffix = '' if params.panels == 'both' else f'_{params.panels}'
     output = params.output or os.path.join(
-        _MODULE_DIR, 'pdf_cloud', f"{info['public_id']}_report.png")
+        _MODULE_DIR, 'pdf_cloud', f"{info['public_id']}_report{suffix}.png")
     os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
     base, _ = os.path.splitext(output)
     outputs = [base + '.png', base + '.pdf']
@@ -677,6 +764,11 @@ def main():
                         help='Also draw the 2-D marginal confidence ellipse (2 d.o.f.), dashed')
     parser.add_argument('--no-section-line', dest='section_line', action='store_false',
                         help='Do not draw the A–A′ section trace on the map panel')
+    parser.add_argument('--panels', choices=['both', 'map', 'section'], default='both',
+                        help="Which panels to draw: 'both' (default), 'map' for the map view "
+                             "alone, 'section' for the vertical section alone. The A-A' trace is "
+                             "dropped from a map-only figure, since it would promise a section "
+                             "that is not there")
     parser.add_argument('--true-scale', action='store_true',
                         help='Draw the section at 1:1 instead of filling the panel; the shape of the '
                              'PDF is then undistorted, but a wide shallow cloud leaves the panel mostly empty')
@@ -709,6 +801,7 @@ def main():
         marginal=args.marginal,
         section_line=args.section_line,
         true_scale=args.true_scale,
+        panels=args.panels,
         output=args.output,
     ))
 
