@@ -190,11 +190,19 @@ def generate_figure(parameters):
     lon0, lat0       = parameters.lon0, parameters.lat0
     lon1,  lat1      = lon0, lat0
     lon2,  lat2      = _dest_point(lon0, lat0, parameters.azimut, parameters.longueur_coupe)
-    lon1a, lat1a     = lon0 - parameters.largeur_coupe / (R * cos(radians(lat0))), lat0
+    # Swath edges sit at +/- largeur_coupe perpendicular to the axis, i.e. along
+    # azimut +/- 90 -- not due east-west, which only coincides for a N-S profile
+    # and otherwise draws the swath narrower than the width pygmt.project selects.
+    lon1a, lat1a     = _dest_point(lon0,  lat0,  parameters.azimut - 90.0, parameters.largeur_coupe)
     lon2a, lat2a     = _dest_point(lon1a, lat1a, parameters.azimut, parameters.longueur_coupe)
-    lon1b, lat1b     = lon0 + parameters.largeur_coupe / (R * cos(radians(lat0))), lat0
+    lon1b, lat1b     = _dest_point(lon0,  lat0,  parameters.azimut + 90.0, parameters.largeur_coupe)
     lon2b, lat2b     = _dest_point(lon1b, lat1b, parameters.azimut, parameters.longueur_coupe)
-    Region           = [lon1a - 0.2, lon2b + 0.2, lat1a - 0.2, lat2b + 0.2]
+    # Bounding box of the four swath corners, so the frame stays valid whatever
+    # the azimuth; a southward profile would otherwise give ymin > ymax.
+    corner_lons      = (lon1a, lon2a, lon1b, lon2b)
+    corner_lats      = (lat1a, lat2a, lat1b, lat2b)
+    Region           = [min(corner_lons) - 0.2, max(corner_lons) + 0.2,
+                        min(corner_lats) - 0.2, max(corner_lats) + 0.2]
 
     # -- Load catalogue --
     quality     = {}     # extra colouring metrics, format 6 only
