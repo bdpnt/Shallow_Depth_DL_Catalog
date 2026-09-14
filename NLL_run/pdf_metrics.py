@@ -526,7 +526,7 @@ _PREDICTORS = [
 ]
 
 # The inverse view: the error the catalog actually publishes, against every
-# indicator that might predict it — the classical three plus the PDF metrics.
+# indicator that might predict it — the classical four plus the PDF metrics.
 #
 # Psi rather than J: Psi = exp(-J) is monotone in J, so the rank correlation is
 # identical up to sign, and Psi is bounded (0, 1]. Raw C68 rather than the
@@ -542,6 +542,7 @@ _ERROR_PREDICTORS = [
     ('RMS',  'RMS (s)',                'log'),
     ('Gap',  'Azimuthal gap (°)',      'linear'),
     ('Nphs', 'Phase count',            'linear'),
+    ('Dist', 'Nearest station distance (km)', 'linear'),
     ('Psi',  r'$\Psi$',                'linear'),
     ('C68',  r'$C_{68}$',              'linear'),
 ]
@@ -901,7 +902,7 @@ def _plot_error_box_panel(ax, data, error_col, y_lim):
 
 
 def _generate_error_figure(data, run_name, output_path):
-    """2 published-error rows x (5 indicators + the dip-reject split), one PDF."""
+    """2 published-error rows x (6 indicators + the dip-reject split), one PDF."""
     import matplotlib.pyplot as plt
     import seaborn as sns
 
