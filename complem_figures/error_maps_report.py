@@ -21,6 +21,13 @@ Differences from `error_maps.py`
   original. The median is computed per cell from the events binned into the
   9 x 9 neighbourhood (then the original's exact inclusive edge test) rather
   than by 344 000 DataFrame masks — identical numbers, seconds instead of hours.
+* National borders and shorelines drawn *under* the data (they show through
+  where the map is empty, the median field and the epicentres cover them
+  elsewhere), from the same GMT database as the PyGMT maps (`aoi_map_report.py`'s `fig.coast(..., borders='1/...')`), through
+  the `.xy` caches of `basemap_lines.py`; `--no-borders` / `--no-coastlines`
+  turn them off.  The caches must be dumped once, in an environment with GMT:
+  `conda run -n pygmt_env python complem_figures/basemap_lines.py --dump`.
+  Without them the figure is drawn as before, with a warning.
 * Writes both a 300 dpi PNG and a vector PDF (`pdf.fonttype = 42`).
 
 Usage
@@ -42,6 +49,11 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import seaborn as sns  # noqa: E402  (rocket_r colormap)
+
+try:                                                    # noqa: E402
+    from complem_figures.basemap_lines import draw_basemap_lines
+except ImportError:                                     # run as a script
+    from basemap_lines import draw_basemap_lines
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -75,6 +87,9 @@ class ErrorMapsReportParams:
     end:       int
     figSave:   Optional[str] = None
     width_cm:  float = 16.0
+    borders:    bool = True
+    coastlines: bool = True
+    basemap_resolution: str = 'i'
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +229,10 @@ def generate_figure(parameters):
                              alpha=0.9, rasterized=True)
         ax.scatter(events['longitude'], events['latitude'], s=0.08, c='black',
                    linewidths=0, rasterized=True)
+        draw_basemap_lines(ax, borders=parameters.borders,
+                           coastlines=parameters.coastlines,
+                           resolution=parameters.basemap_resolution,
+                           verbose=(k == 0))
         ax.text(0.01, 0.97, column.upper(), transform=ax.transAxes,
                 ha='left', va='top', fontsize=9, fontweight='bold')
         ax.set_xlim(_LON_MIN, _LON_MAX)
@@ -272,9 +291,18 @@ def main():
                         help='default: complem_figures/error_maps_ssst/<start>-<end>_report.png')
     parser.add_argument('--width-cm', type=float, default=16.0,
                         help='printed width, i.e. your \\linewidth in cm (default: 16)')
+    parser.add_argument('--no-borders', action='store_true',
+                        help='do not draw the national borders')
+    parser.add_argument('--no-coastlines', action='store_true',
+                        help='do not draw the shorelines')
+    parser.add_argument('--basemap-resolution', default='i', choices=['c', 'l', 'i', 'h', 'f'],
+                        help='which basemap_lines.py cache to read (default: i)')
     args = parser.parse_args()
     generate_figure(ErrorMapsReportParams(file=args.file, start=args.start, end=args.end,
-                                          figSave=args.output, width_cm=args.width_cm))
+                                          figSave=args.output, width_cm=args.width_cm,
+                                          borders=not args.no_borders,
+                                          coastlines=not args.no_coastlines,
+                                          basemap_resolution=args.basemap_resolution))
 
 
 if __name__ == '__main__':
