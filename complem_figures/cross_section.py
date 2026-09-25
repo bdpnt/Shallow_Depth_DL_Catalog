@@ -190,11 +190,19 @@ def generate_figure(parameters):
     lon0, lat0       = parameters.lon0, parameters.lat0
     lon1,  lat1      = lon0, lat0
     lon2,  lat2      = _dest_point(lon0, lat0, parameters.azimut, parameters.longueur_coupe)
-    lon1a, lat1a     = lon0 - parameters.largeur_coupe / (R * cos(radians(lat0))), lat0
+    # Swath edges sit at +/- largeur_coupe perpendicular to the axis, i.e. along
+    # azimut +/- 90 -- not due east-west, which only coincides for a N-S profile
+    # and otherwise draws the swath narrower than the width pygmt.project selects.
+    lon1a, lat1a     = _dest_point(lon0,  lat0,  parameters.azimut - 90.0, parameters.largeur_coupe)
     lon2a, lat2a     = _dest_point(lon1a, lat1a, parameters.azimut, parameters.longueur_coupe)
-    lon1b, lat1b     = lon0 + parameters.largeur_coupe / (R * cos(radians(lat0))), lat0
+    lon1b, lat1b     = _dest_point(lon0,  lat0,  parameters.azimut + 90.0, parameters.largeur_coupe)
     lon2b, lat2b     = _dest_point(lon1b, lat1b, parameters.azimut, parameters.longueur_coupe)
-    Region           = [lon1a - 0.2, lon2b + 0.2, lat1a - 0.2, lat2b + 0.2]
+    # Bounding box of the four swath corners, so the frame stays valid whatever
+    # the azimuth; a southward profile would otherwise give ymin > ymax.
+    corner_lons      = (lon1a, lon2a, lon1b, lon2b)
+    corner_lats      = (lat1a, lat2a, lat1b, lat2b)
+    Region           = [min(corner_lons) - 0.2, max(corner_lons) + 0.2,
+                        min(corner_lats) - 0.2, max(corner_lats) + 0.2]
 
     # -- Load catalogue --
     quality     = {}     # extra colouring metrics, format 6 only
@@ -427,11 +435,20 @@ def generate_figure(parameters):
                 cval = data[:, 2]
 
     if plot_coupe:
+        # 1:1 aspect. The panel keeps a fixed plotted width and takes whatever
+        # height the depth range needs at the same cm/km, so distance and depth
+        # are on one scale. A fixed height instead made the vertical
+        # exaggeration a side effect of --length and --depth-max: 0.65x on a
+        # 12 x 13 km section, 1.67x on a 50 x 21 km one.
+        panel_top    = -1.0   # km, panel top (above sea level)
+        panel_width  = 10.0   # cm
+        panel_height = panel_width * (parameters.prof_coupe - panel_top) / parameters.longueur_coupe
         if parameters.draw_map:
-            fig.shift_origin(yshift='-10c')   # drop below the map; alone, it starts at the origin
+            # Drop below the map, keeping the same gap whatever the panel height.
+            fig.shift_origin(yshift=f'-{panel_height + 3.0}c')
         fig.basemap(
-            projection = 'X10/-7',
-            region     = [0, parameters.longueur_coupe, -1, parameters.prof_coupe],
+            projection = f'X{panel_width}/-{panel_height}',
+            region     = [0, parameters.longueur_coupe, panel_top, parameters.prof_coupe],
             frame      = ['xafg100+lDistance (km)', 'yafg50+lDepth (km)', 'WSen'],
         )
 
@@ -450,8 +467,10 @@ def generate_figure(parameters):
                           reverse=style['reverse'])
             fig.plot(x=X[order], y=Z[order], style='c0.15c',
                      fill=shown, cmap=True, pen='0.25p,black')
+            # Never taller than the panel: at 1:1 a long shallow section can be
+            # shorter than the 5 cm the bar would otherwise take.
             fig.colorbar(frame=[f"af+l{style['label']}"],
-                         position='JMR+w5c/0.5c+o0.5c/0c')
+                         position=f'JMR+w{min(5.0, panel_height)}c/0.5c+o0.5c/0c')
 
     if not plot_coupe and not parameters.draw_map:
         raise RuntimeError('Nothing to draw: no event projected onto the cross-section '

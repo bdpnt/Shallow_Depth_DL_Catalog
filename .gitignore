@@ -32,3 +32,5 @@ test.ipynb
 *.txt
 *.html
 temp_picks/all_picks/
+*.xy
+*.history
