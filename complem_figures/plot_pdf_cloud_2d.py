@@ -1,7 +1,7 @@
 """
-plot_pdf_cloud_report.py
-============================
-Report-ready 2-D counterpart of `plot_pdf_cloud.py`: the NLLoc location PDF of a
+plot_pdf_cloud_2d.py
+====================
+2-D counterpart of `plot_pdf_cloud.py`: the NLLoc location PDF of a
 single event, one iteration, drawn as static panels instead of an interactive
 3D scene.
 
@@ -67,18 +67,18 @@ never silently dropped.
 
 Usage
 -----
-    python complem_figures/plot_pdf_cloud_report.py \\
+    python complem_figures/plot_pdf_cloud_2d.py \\
         --run-name ssst_run1 --event-id PYRENEES_034967 --zone 2
 
-    python complem_figures/plot_pdf_cloud_report.py \\
+    python complem_figures/plot_pdf_cloud_2d.py \\
         --run-name ssst_run1 --event-id PYRENEES_034967 --zone 2 \\
         --iteration 0 --output complem_figures/pdf_cloud/PYRENEES_034967_iter0.png
 
-    python complem_figures/plot_pdf_cloud_report.py \\
+    python complem_figures/plot_pdf_cloud_2d.py \\
         --hyp run/ssst_loc/ssst_run1/Pyrenees_2_SSST/loc_ssst_corr5/GLOBAL_2/Pyrenees_2.20180504.051742.grid0.loc.hyp \\
         --output /tmp/event.png
 
-    python complem_figures/plot_pdf_cloud_report.py \\
+    python complem_figures/plot_pdf_cloud_2d.py \\
         --run-name ssst_run1 --event-id PYRENEES_048997 --zone 1 \\
         --panels section --true-scale
 
@@ -86,16 +86,13 @@ Writes a 300 dpi PNG and a vector PDF of the same name.
 """
 
 import argparse
-import glob
 import os
 import re
-import subprocess
 import sys
 import warnings
 from dataclasses import dataclass
 
 import numpy as np
-import pandas as pd
 import pyproj
 from scipy.stats import chi2
 
@@ -113,29 +110,15 @@ if _PROJECT_ROOT not in sys.path:
 # 16-byte records where the header is one, so it silently loses the first 3
 # samples of every cloud.
 from NLL_run.pdf_metrics import read_scat as read_nlloc_scatter  # noqa: E402
+from complem_figures.plot_pdf_cloud import (  # noqa: E402
+    _MAXLIKE_RE, _find_hyp_path, _find_iteration_dirs, _parse_statistics,
+    _read_lambert_params, _resolve_event_by_location, _sibling,
+)
 
 
 # ---------------------------------------------------------------------------
-# .hyp / .hdr parsing (copied from plot_pdf_cloud.py, which stays untouched)
+# .hyp / .hdr parsing (shared helpers are imported from plot_pdf_cloud.py)
 # ---------------------------------------------------------------------------
-
-_TRANS_RE = re.compile(
-    r'TRANSFORM\s+LAMBERT\s+RefEllipsoid\s+(\S+)\s+'
-    r'LatOrig\s+([-\d.]+)\s+LongOrig\s+([-\d.]+)\s+'
-    r'FirstStdParal\s+([-\d.]+)\s+SecondStdParal\s+([-\d.]+)\s+'
-    r'RotCW\s+([-\d.]+)'
-)
-
-_STATISTICS_RE = re.compile(
-    r'STATISTICS\s+ExpectX\s+([-\d.eE+]+)\s+Y\s+([-\d.eE+]+)\s+Z\s+([-\d.eE+]+)\s+'
-    r'CovXX\s+([-\d.eE+]+)\s+XY\s+([-\d.eE+]+)\s+XZ\s+([-\d.eE+]+)\s+'
-    r'YY\s+([-\d.eE+]+)\s+YZ\s+([-\d.eE+]+)\s+ZZ\s+([-\d.eE+]+)'
-)
-
-_MAXLIKE_RE = re.compile(
-    r'MAXIMUM_LIKELIHOOD\s+MaxLikeLat\s+([-\d.eE+]+)\s+Long\s+([-\d.eE+]+)\s+'
-    r'Depth\s+([-\d.eE+]+)'
-)
 
 _GEOGRAPHIC_RE = re.compile(
     r'GEOGRAPHIC\s+OT\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+'
@@ -150,48 +133,6 @@ _HORUNC_RE = re.compile(
 _PUBLIC_ID_RE = re.compile(r'PUBLIC_ID\s+(\S+)')
 
 
-def _find_iteration_dirs(ssst_root, run_name, zone):
-    """Return sorted (step, dir) pairs for every loc_ssst_corr<N>/GLOBAL_<zone> folder."""
-    pattern = os.path.join(ssst_root, run_name, f'Pyrenees_{zone}_SSST',
-                           'loc_ssst_corr*', f'GLOBAL_{zone}')
-    step_dirs = []
-    for d in glob.glob(pattern):
-        match = re.search(r'loc_ssst_corr(\d+)', d)
-        step_dirs.append((int(match.group(1)), d))
-    return sorted(step_dirs)
-
-
-def _find_hyp_path(iter_dir, event_id):
-    """Locate the .hyp file whose PUBLIC_ID line matches event_id, via grep.
-
-    Excludes the per-iteration `*.sum.grid0.loc.hyp` file: it concatenates every
-    event's .hyp block for that iteration, but has no companion .scat file.
-    """
-    proc = subprocess.run(
-        ['grep', '-rlF', f'PUBLIC_ID {event_id}', '--exclude=*.sum.*', iter_dir],
-        capture_output=True, text=True,
-    )
-    matches = proc.stdout.strip().splitlines()
-    return matches[0] if matches else None
-
-
-def _sibling(hyp_path, ext):
-    return hyp_path[:-len('.hyp')] + ext
-
-
-def _read_lambert_params(hdr_path):
-    """Parse the per-event TRANSFORM LAMBERT line from a .grid0.loc.hdr file."""
-    with open(hdr_path) as f:
-        text = f.read()
-    match = _TRANS_RE.search(text)
-    if not match:
-        raise ValueError(f'No LAMBERT TRANSFORM found in {hdr_path}')
-    _, lat0, lon0, p1, p2, rot = match.groups()
-    if float(rot) != 0.0:
-        warnings.warn(f'{hdr_path}: non-zero RotCW ({rot}) is not supported by this converter — ignoring.')
-    return dict(lat0=float(lat0), lon0=float(lon0), p1=float(p1), p2=float(p2))
-
-
 def _lambert_transformers(params):
     """Build (lon,lat)->(x,y) and (x,y)->(lon,lat) transformers for the local km frame."""
     crs = pyproj.CRS.from_proj4(
@@ -201,23 +142,6 @@ def _lambert_transformers(params):
     to_local = pyproj.Transformer.from_crs('EPSG:4326', crs, always_xy=True)
     to_geo = pyproj.Transformer.from_crs(crs, 'EPSG:4326', always_xy=True)
     return to_local, to_geo
-
-
-def _parse_statistics(hyp_path):
-    """Parse the STATISTICS line: expectation point + raw covariance, both local km."""
-    with open(hyp_path) as f:
-        text = f.read()
-    match = _STATISTICS_RE.search(text)
-    if not match:
-        raise ValueError(f'No STATISTICS line found in {hyp_path}')
-    ex, ey, ez, cxx, cxy, cxz, cyy, cyz, czz = map(float, match.groups())
-    center = np.array([ex, ey, ez])
-    cov = np.array([
-        [cxx, cxy, cxz],
-        [cxy, cyy, cyz],
-        [cxz, cyz, czz],
-    ])
-    return center, cov
 
 
 def _parse_hyp_header(hyp_path, to_local):
@@ -384,7 +308,7 @@ def _draw_markers(ax, expect_xy, maxlike_xy):
 # ---------------------------------------------------------------------------
 
 @dataclass
-class PdfCloudReportParams:
+class PdfCloud2DParams:
     ssst_root: str = None
     run_name: str = None
     event_id: str = None
@@ -633,7 +557,7 @@ def _build_figure(cloud, center, cov, info, params, iter_label):
 # ---------------------------------------------------------------------------
 
 def generate_figure(params):
-    """Generate and save the 2-D report figure for one event / one iteration.
+    """Generate and save the 2-D figure for one event / one iteration.
 
     Returns
     -------
@@ -688,7 +612,7 @@ def generate_figure(params):
 
     suffix = '' if params.panels == 'both' else f'_{params.panels}'
     output = params.output or os.path.join(
-        _MODULE_DIR, 'pdf_cloud', f"{info['public_id']}_report{suffix}.png")
+        _MODULE_DIR, 'pdf_cloud', f"{info['public_id']}{suffix}.png")
     os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
     base, _ = os.path.splitext(output)
     outputs = [base + '.png', base + '.pdf']
@@ -702,39 +626,13 @@ def generate_figure(params):
             'n_samples': len(cloud), 'maxlike_source': info['maxlike_source']}
 
 
-def _resolve_event_by_location(result_csv, lat, lon, date, radius_km, window_days):
-    """Search a merged RESULT csv for the event nearest (lat, lon, date) within tolerance."""
-    df = pd.read_csv(result_csv, skipinitialspace=True)
-    df['date-time'] = pd.to_datetime(df['date-time'])
-    target_date = pd.to_datetime(date)
-
-    r_earth = 6371.0
-    lat1, lon1 = np.radians(df['latitude']), np.radians(df['longitude'])
-    lat2, lon2 = np.radians(lat), np.radians(lon)
-    dlat, dlon = lat2 - lat1, lon2 - lon1
-    a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
-    dist_km = 2 * r_earth * np.arcsin(np.sqrt(a))
-    dt_days = (df['date-time'] - target_date).abs().dt.total_seconds() / 86400.0
-
-    candidates = df[(dist_km <= radius_km) & (dt_days <= window_days)]
-    if candidates.empty:
-        raise ValueError(f'No event found within {radius_km} km / {window_days} days of ({lat}, {lon}, {date})')
-    if len(candidates) > 1:
-        print('Multiple candidates found:')
-        print(candidates[['publicId', 'source', 'latitude', 'longitude', 'date-time']].to_string(index=False))
-        raise ValueError('Ambiguous search — narrow --radius-km / --window-days or use --event-id/--zone directly.')
-
-    row = candidates.iloc[0]
-    return row['publicId'], row['source'].replace('GLOBAL_', '')
-
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Report-ready 2-D view of one event NLLoc location PDF: '
+        description='2-D view of one event NLLoc location PDF: '
                     'map panel + vertical section along the widest horizontal direction.')
     parser.add_argument('--ssst-root', default=os.path.join(_PROJECT_ROOT, 'run', 'ssst_loc'),
                         help='Root folder containing <run-name>/Pyrenees_<zone>_SSST/...')
@@ -774,7 +672,7 @@ def main():
                              'PDF is then undistorted, but a wide shallow cloud leaves the panel mostly empty')
     parser.add_argument('--output', default=None,
                         help='Output path; the extension is replaced to write both .png and .pdf '
-                             '(default: complem_figures/pdf_cloud/<event_id>_report.png)')
+                             '(default: complem_figures/pdf_cloud/<event_id>.png)')
     args = parser.parse_args()
 
     event_id, zone = args.event_id, args.zone
@@ -788,7 +686,7 @@ def main():
         else:
             parser.error('Provide --hyp, or --event-id and --zone, or --lat, --lon and --date.')
 
-    generate_figure(PdfCloudReportParams(
+    generate_figure(PdfCloud2DParams(
         ssst_root=args.ssst_root,
         run_name=args.run_name,
         event_id=event_id,

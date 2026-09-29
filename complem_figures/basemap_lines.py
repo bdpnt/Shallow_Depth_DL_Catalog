@@ -7,13 +7,13 @@ from the same GMT database as the PyGMT maps.
 Why a cache
 -----------
 The PyGMT figures draw their borders with `fig.coast(..., borders='1/...')`
-(see `aoi_map_report.py`).  The matplotlib report figures cannot call
+(see `aoi_map.py`).  The matplotlib report figures cannot call
 `fig.coast`, and no coastline database ships with matplotlib.  So the geometry
 is dumped **once** with `gmt coast -M` into multi-segment `.xy` files under
 `complem_figures/basemap/`, and every matplotlib figure reads it from there.
 
 The dump uses the same database, resolution and area threshold as
-`aoi_map_report.py`'s PyGMT backend (`-Di`, `-A0/0/1`, `-N1`), so the lines
+`aoi_map.py`'s PyGMT backend (`-Di`, `-A0/0/1`, `-N1`), so the lines
 drawn on a matplotlib map are the same lines as on the PyGMT maps.
 
 Dump the caches once, in the environment that has GMT:
@@ -54,8 +54,8 @@ _BASEMAP_DIR = os.path.join(_MODULE_DIR, 'basemap')
 
 # Generous enough for every map of the deliverable, so the dump is a one-off.
 DEFAULT_REGION     = [-3.5, 4.5, 41.0, 45.0]
-DEFAULT_RESOLUTION = 'i'          # as aoi_map_report.py's fig.coast(resolution='i')
-AREA_THRESH        = '0/0/1'      # as aoi_map_report.py's area_thresh
+DEFAULT_RESOLUTION = 'i'          # as aoi_map.py's fig.coast(resolution='i')
+AREA_THRESH        = '0/0/1'      # as aoi_map.py's area_thresh
 
 # GMT flag selecting what `gmt coast -M` dumps
 _DUMP_FLAGS = {

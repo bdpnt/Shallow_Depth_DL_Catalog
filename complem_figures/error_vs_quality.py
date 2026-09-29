@@ -1,6 +1,6 @@
 """
-error_vs_quality_report.py
-==========================
+error_vs_quality.py
+===================
 Report-ready version of the `<run>_error_vs_quality.pdf` figure written by
 `NLL_run/pdf_metrics.py`, restricted to the four classical quality
 indicators: published ERH (top row) and ERZ (bottom row) against RMS, azimuthal
@@ -24,9 +24,9 @@ Differences from `pdf_metrics._generate_error_figure`
 
 Usage
 -----
-    python complem_figures/error_vs_quality_report.py \\
+    python complem_figures/error_vs_quality.py \\
         --csv RESULT/SSST_result.csv \\
-        --output complem_figures/pdf_metrics/ssst_run1_error_vs_quality_report.png
+        --output complem_figures/pdf_metrics/ssst_run1_error_vs_quality.png
 """
 
 import argparse
@@ -78,7 +78,7 @@ _CM        = 1 / 2.54
 
 
 @dataclass
-class ErrorVsQualityReportParams:
+class ErrorVsQualityParams:
     csv:       str = 'RESULT/SSST_result.csv'
     figSave:   Optional[str] = None
     width_cm:  float = 16.0
@@ -228,7 +228,7 @@ def generate_figure(parameters):
 
     if not parameters.figSave:
         parameters.figSave = os.path.join(_MODULE_DIR, 'pdf_metrics',
-                                          'ssst_run1_error_vs_quality_report.png')
+                                          'ssst_run1_error_vs_quality.png')
     base, _ = os.path.splitext(parameters.figSave)
     outputs = []
     for path in (f'{base}.png', f'{base}.pdf'):
@@ -246,7 +246,7 @@ def main():
     parser.add_argument('--csv', default='RESULT/SSST_result.csv',
                         help='result CSV annotated by NLL_run/pdf_metrics.py (default: %(default)s)')
     parser.add_argument('--output', default=None,
-                        help='default: complem_figures/pdf_metrics/ssst_run1_error_vs_quality_report.png')
+                        help='default: complem_figures/pdf_metrics/ssst_run1_error_vs_quality.png')
     parser.add_argument('--predictors', default=','.join(_DEFAULT_PREDICTORS),
                         help='comma-separated columns, one panel each '
                              f'(default: %(default)s; also Psi, C68)')
@@ -255,7 +255,7 @@ def main():
     parser.add_argument('--height-cm', type=float, default=8.0,
                         help='printed height in cm (default: 8)')
     args = parser.parse_args()
-    generate_figure(ErrorVsQualityReportParams(
+    generate_figure(ErrorVsQualityParams(
         csv=args.csv, figSave=args.output, width_cm=args.width_cm, height_cm=args.height_cm,
         predictors=tuple(p.strip() for p in args.predictors.split(',') if p.strip())))
 

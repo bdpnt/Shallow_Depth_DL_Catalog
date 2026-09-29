@@ -1,30 +1,32 @@
 """
-depth_histogram_compare_report.py
-=================================
+depth_histogram_compare.py
+==========================
 Report figure: depth distribution of the same events before and after
 relocation, on two stacked panels sharing both axes.
 
   (a) depths published by the source agencies (merged bulletin, .obs), blue;
-  (b) relocated depths from a RESULT/*.csv (default column: expect_z, the
-      PDF expectation published as the preferred origin), orange;
-  (c) same relocation, maximum-likelihood hypocentres (default column:
-      depth), green.
+  (b) relocated depths from a RESULT/*.csv, PDF expectation (expect_z, the
+      preferred origin), orange;
+  (c) same relocation, maximum-likelihood depths (maxlike_depth, or depth in
+      a CSV written before SAVE_NLLOC_EXPECTATION; see
+      `event_maps.hypocentre_columns`), green.
 No titles; panel letters only.
 
 Only events present in both files (matched on the permanent identifier)
 are drawn, so that the two panels describe the same earthquakes.
-Sibling of depth_histogram_report.py; that module is left untouched.
+Shares its palette with depth_histogram.py.
 
 Usage
 -----
-    python complem_figures/depth_histogram_compare_report.py \\
+    python complem_figures/depth_histogram_compare.py \\
         --before obs/GLOBAL.obs --after RESULT/SSST_result.csv \\
-        --output complem_figures/depth_histogram/GLOBAL_vs_SSST_report.png \\
+        --output complem_figures/depth_histogram/GLOBAL_vs_SSST.png \\
         --bin-size 0.2 --min-depth -3 --max-depth 25
 """
 
 import argparse
 import os
+import sys
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -34,12 +36,13 @@ import pandas as pd
 _MODULE_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 
-_BAR_COLOR  = '#4C72B0'   # seaborn deep blue, as in the other report figures
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+from complem_figures.depth_histogram import _BAR_COLOR, _GRID, _INK, _INK_MUTED  # noqa: E402
+from complem_figures.event_maps import hypocentre_columns  # noqa: E402
+
 _ROUND_COL  = '#DD8452'   # seaborn deep orange: relocated depths, panel (b)
 _ML_COL     = '#55A868'   # seaborn deep green: maximum likelihood, panel (c)
-_INK        = '#1A1A1A'
-_INK_MUTED  = '#5A5A5A'
-_GRID       = '#D9D9D9'
 
 
 def read_obs_depths(path):
@@ -59,13 +62,14 @@ def fmt_int(n):
     return f'{n:,}'.replace(',', ' ')   # thin space as thousands separator
 
 
-def generate_figure(before, after, output, column='expect_z', column_ml='depth',
-                    max_err=None,
+def generate_figure(before, after, output, max_err=None,
                     bin_size=0.2, min_depth=-3.0, max_depth=25.0,
                     also_pdf=True):
     b = read_obs_depths(before)
-    a = pd.read_csv(after, usecols=['publicId', column, column_ml,
-                                    'true_erh', 'true_erz']).rename(
+    a = pd.read_csv(after)
+    _, _, column    = hypocentre_columns(a, 'expect')
+    _, _, column_ml = hypocentre_columns(a, 'maxlike')
+    a = a[['publicId', column, column_ml, 'true_erh', 'true_erz']].rename(
         columns={column: 'dep_after', column_ml: 'dep_ml'})
     m = b.merge(a, on='publicId', how='inner').dropna()
     n = len(m)
@@ -149,11 +153,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[1])
     p.add_argument('--before', default=os.path.join(_PROJECT_ROOT, 'obs', 'GLOBAL.obs'))
     p.add_argument('--after',  default=os.path.join(_PROJECT_ROOT, 'RESULT', 'SSST_result.csv'))
-    p.add_argument('--column', default='expect_z')
-    p.add_argument('--column-ml', default='depth',
-                   help='maximum-likelihood depth column for panel (c)')
     p.add_argument('--output', default=os.path.join(
-        _MODULE_DIR, 'depth_histogram', 'GLOBAL_vs_SSST_report.png'))
+        _MODULE_DIR, 'depth_histogram', 'GLOBAL_vs_SSST.png'))
     p.add_argument('--bin-size',  type=float, default=0.2)
     p.add_argument('--min-depth', type=float, default=-3.0)
     p.add_argument('--max-depth', type=float, default=25.0)
@@ -162,7 +163,7 @@ def main():
                         'ERZ both <= this value (km); panel (a) is unfiltered')
     p.add_argument('--no-pdf', action='store_true')
     a = p.parse_args()
-    generate_figure(a.before, a.after, a.output, a.column, a.column_ml, a.max_err, a.bin_size,
+    generate_figure(a.before, a.after, a.output, a.max_err, a.bin_size,
                     a.min_depth, a.max_depth, not a.no_pdf)
 
 

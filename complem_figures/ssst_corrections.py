@@ -80,6 +80,15 @@ Usage
     # presentation-quality pages for chosen fields (~55 s each)
     python complem_figures/ssst_corrections.py --product atlas \\
         --stations FR.0041:P,RD.0038:P --map-spacing 0.005
+    # one page as its own .png/.pdf, for the report
+    python complem_figures/ssst_corrections.py --product page --station CA.0051:S
+
+Pages are drawn at their printed size (--width-cm, default 16 cm = \\linewidth
+of an A4 page with 2.5 cm margins) with 7-9 pt fonts: three rows of two maps,
+the five increments (a-e) then their cumulative sum (f), each tagged with its
+smoothing length and, on the right, its arrival count and rms. Atlas pages
+carry a one-line header (station, phase, zone, depth slice, node spacing); the
+single page has none - that belongs in the caption.
 
 Drawing note
 ------------
@@ -153,6 +162,12 @@ _SLICE_DEPTH  = None    # km; None = each station's own median event depth.
 _MIN_EFF_N    = 1.0     # grey out nodes whose summed exponential weight is
                         # below this: no event close enough, so the value there
                         # is only the weight-floor static term
+_PAGE_EXTENT  = (-2.25, 3.5, 41.75, 43.75)   # shared frame of the single-page product
+
+_INK       = '#1A1A1A'
+_INK_MUTED = '#5A5A5A'
+_CM        = 1 / 2.54
+
 _SPREAD_BIN    = 0.05   # degrees, spread-map cell
 _SPREAD_WINDOW = 2      # cells of smoothing added on each side of a cell
 _SPREAD_MIN_N  = 20     # events in the window below which a cell is left blank
@@ -169,7 +184,8 @@ class SsstCorrParams:
     depth:       float = _SLICE_DEPTH   # None = per-station median event depth
     map_spacing: float = _MAP_SPACING
     extent:      tuple = None   # (lon0, lon1, lat0, lat1); None = per-station
-    product:     str   = 'all'   # atlas | spread | displacement | all
+    product:     str   = 'all'   # atlas | spread | displacement | all | page
+    width_cm:    float = 16.0    # printed width of an atlas / single page
 
 
 # ---------------------------------------------------------------------------
@@ -641,24 +657,61 @@ def station_fields(cache, zone, station, phase, depth=None, spacing=_MAP_SPACING
     }
 
 
-def _draw_map(ax, lats, lons, values, mask, vmax, cmap, station_lat, station_lon):
-    import matplotlib.pyplot as plt   # noqa: F401  (kept local, see main)
+def _style():
+    import matplotlib as mpl
 
-    plotted = np.ma.masked_where(mask, values)
+    mpl.rcParams.update({
+        'font.family':       'sans-serif',
+        'font.size':         7,
+        'axes.titlesize':    8,
+        'axes.labelsize':    8,
+        'xtick.labelsize':   7,
+        'ytick.labelsize':   7,
+        'axes.edgecolor':    _INK_MUTED,
+        'axes.linewidth':    0.5,
+        'xtick.major.width': 0.5,
+        'ytick.major.width': 0.5,
+        'xtick.major.size':  2.5,
+        'ytick.major.size':  2.5,
+        'xtick.major.pad':   2,
+        'ytick.major.pad':   2,
+        'text.color':        _INK,
+        'axes.labelcolor':   _INK,
+        'xtick.color':       _INK,
+        'ytick.color':       _INK,
+        'pdf.fonttype':      42,
+        'ps.fonttype':       42,
+        'savefig.dpi':       300,
+    })
+
+
+def _draw(ax, lats, lons, values, mask, vmax, sta_lat, sta_lon):
     # rasterized: 300 pages x 6 vector meshes is a ~90 MB PDF, ~7 MB rasterized,
     # and the meshes carry no detail that survives as vectors anyway
-    mesh = ax.pcolormesh(lons, lats, plotted, cmap=cmap, rasterized=True,
-                         vmin=-vmax, vmax=vmax, shading='auto')
+    mesh = ax.pcolormesh(lons, lats, np.ma.masked_where(mask, values), cmap='RdBu_r',
+                         vmin=-vmax, vmax=vmax, shading='auto', rasterized=True)
     ax.set_facecolor('0.88')          # shows through wherever the field is masked
-    ax.plot(station_lon, station_lat, marker='v', color='k',
-            markersize=9, markeredgecolor='w', markeredgewidth=1.0, zorder=5)
+    ax.plot(sta_lon, sta_lat, marker='v', color='k', markersize=5,
+            markeredgecolor='w', markeredgewidth=0.6, zorder=5)
     ax.set_aspect(1.0 / np.cos(np.deg2rad(float(np.mean(lats)))))
-    ax.tick_params(labelsize=7)
+    ax.set_xlim(lons[0] - 0.5 * (lons[1] - lons[0]), lons[-1] + 0.5 * (lons[1] - lons[0]))
+    ax.set_ylim(lats[0] - 0.5 * (lats[1] - lats[0]), lats[-1] + 0.5 * (lats[1] - lats[0]))
     return mesh
 
 
-def atlas_page(fig, fields, station, phase, zone, station_lat, station_lon):
-    """One atlas page: five increments, then their cumulative total."""
+def station_page(fields, sta_lat, sta_lon, width_cm=16.0, header=None):
+    """
+    Five increments + cumulative, 3 rows x 2 columns, drawn at printed size
+    (`width_cm`). `header` adds a one-line strip on top (the atlas pages carry
+    one; the single-page product leaves identification to the caption).
+
+    Returns the matplotlib Figure; the caller saves and closes it.
+    """
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+
+    _style()
+
     increments, weights = fields['increments'], fields['weights']
     lats, lons = fields['lats'], fields['lons']
 
@@ -670,57 +723,72 @@ def atlas_page(fig, fields, station, phase, zone, station_lat, station_lon):
     vmax_tot = (float(np.percentile(np.abs(inside_total), 98))
                 if inside_total.size else 1e-3) or 1e-3
 
-    axes = [fig.add_subplot(2, 3, k + 1) for k in range(6)]
-    mesh_inc = None
-    for k, (value, mask, char_dist) in enumerate(zip(increments, masks, _CHAR_DISTS)):
-        mesh_inc = _draw_map(axes[k], lats, lons, value, mask, vmax_inc,
-                             'RdBu_r', station_lat, station_lon)
-        label = ('L = 9999 km  (static)' if char_dist > 1000
-                 else f'L = {char_dist:g} km')
-        # the five panels share one colour scale, so amplitude is comparable
-        # between them by eye - but the quiet ones then look empty, and their
-        # rms is the only way to read how quiet they actually are
-        rms = float(np.sqrt((np.asarray(value)[~mask] ** 2).mean())) if (~mask).any() else 0.0
-        axes[k].set_title(f'{label}\niteration {k}, {fields["n_arrivals"][k]} arrivals'
-                          f'   rms {rms * 1000:.0f} ms', fontsize=9)
+    width = width_cm
+    lon_span = (lons[-1] - lons[0]) * np.cos(np.deg2rad(float(np.mean(lats))))
+    map_ratio = (lats[-1] - lats[0]) / lon_span
+    # margins in cm: left for lat labels, right gap between columns, title strip per row
+    left, gap, right = 1.0, 0.35, 0.1
+    map_w = (width - left - gap - right) / 2
+    map_h = map_w * map_ratio
+    title_h, bottom_axis, cbar_block = 0.45, 0.55, 1.35
+    row_h = title_h + map_h
+    header_h = 0.55 if header else 0.0
+    height = header_h + 3 * row_h + 2 * 0.12 + bottom_axis + cbar_block
 
-    # the cumulative panel is defined wherever the coarse terms are, i.e.
-    # everywhere on the zone's grid - but still nowhere off it
-    mesh_tot = _draw_map(axes[5], lats, lons, fields['total'],
-                         fields['outside'],
-                         vmax_tot, 'RdBu_r', station_lat, station_lon)
-    axes[5].set_title('CUMULATIVE  (sum of the five)\ncorrection in the final grids',
-                      fontsize=9, fontweight='bold')
+    fig = plt.figure(figsize=(width * _CM, height * _CM))
+    if header:
+        fig.text(left / width, 1 - 0.15 / height, header, ha='left', va='top',
+                 fontsize=9, fontweight='bold')
 
-    fig.suptitle(f'SSST travel-time correction   {station}  {phase}-phase   '
-                 f'zone {zone}   depth slice {fields["depth"]:.1f} km',
-                 fontsize=13, fontweight='bold')
-    fig.subplots_adjust(left=0.05, right=0.98, top=0.86, bottom=0.17,
-                        wspace=0.18, hspace=0.32)
+    def rect(row, col):
+        x = left + col * (map_w + gap)
+        y = height - header_h - (row + 1) * row_h - row * 0.12
+        return [x / width, y / height, map_w / width, map_h / height]
 
-    # colourbar labels go ABOVE the bars, leaving the strip underneath free for
-    # the footnote - otherwise the two collide at this figure size
-    for cax_rect, mesh, label in (
-            ([0.08, 0.095, 0.42, 0.018], mesh_inc,
-             'increment (s), shared scale across the five panels'),
-            ([0.62, 0.095, 0.30, 0.018], mesh_tot, 'total correction (s)')):
-        cax = fig.add_axes(cax_rect)
+    tags = 'abcdef'
+    axes = []
+    for k in range(6):
+        row, col = divmod(k, 2)
+        ax = fig.add_axes(rect(row, col))
+        axes.append(ax)
+        if k < 5:
+            mesh_inc = _draw(ax, lats, lons, increments[k], masks[k], vmax_inc, sta_lat, sta_lon)
+            char_dist = _CHAR_DISTS[k]
+            label = 'L = 9999 km (static)' if char_dist > 1000 else f'L = {char_dist:g} km'
+            rms = (float(np.sqrt((np.asarray(increments[k])[~masks[k]] ** 2).mean()))
+                   if (~masks[k]).any() else 0.0)
+            n_arr = f'{fields["n_arrivals"][k]:,}'.replace(',', '\u2009')
+            right_txt = f'{n_arr} arrivals, rms {rms * 1000:.0f} ms'
+        else:
+            mesh_tot = _draw(ax, lats, lons, fields['total'], fields['outside'],
+                             vmax_tot, sta_lat, sta_lon)
+            label, right_txt = 'Cumulative (final grids)', ''
+        ax.set_title(f'$\\bf{{{tags[k]}}}$   {label}', loc='left', pad=3)
+        if right_txt:
+            ax.set_title(right_txt, loc='right', pad=3, color=_INK_MUTED, fontsize=7)
+
+        ax.set_xticks(np.arange(np.ceil(lons[0]), lons[-1] + 1e-9, 1.0))
+        ax.set_yticks(np.arange(np.ceil(lats[0] * 2) / 2, lats[-1] + 1e-9, 0.5))
+        ax.xaxis.set_major_formatter(lambda v, _: f'{v:.0f}°')
+        ax.yaxis.set_major_formatter(lambda v, _: f'{v:.1f}°')
+        if row < 2:
+            ax.tick_params(labelbottom=False)
+        if col == 1:
+            ax.tick_params(labelleft=False)
+
+    # two colour bars under the bottom row: increments under column a, total under column b
+    cb_y = (cbar_block - 0.45) / height
+    for col, mesh, label in ((0, mesh_inc, 'Increment (s), shared by a–e'),
+                             (1, mesh_tot, 'Total correction (s)')):
+        x = left + col * (map_w + gap) + 0.1 * map_w
+        cax = fig.add_axes([x / width, cb_y, 0.8 * map_w / width, 0.2 / height])
         cb = fig.colorbar(mesh, cax=cax, orientation='horizontal')
-        cb.set_label(label, fontsize=8)
-        cb.ax.xaxis.set_label_position('top')
-        cb.ax.tick_params(labelsize=7)
+        cb.set_label(label, fontsize=8, labelpad=2)
+        cb.outline.set_linewidth(0.5)
+        cb.ax.tick_params(width=0.5, length=2.5, labelsize=7)
+        cb.ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(5, symmetric=True))
 
-    lat_km, lon_km = _node_spacing_km(fields['lats'], fields['lons'])
-    fig.text(0.08, 0.010,
-             'Axes are longitude / latitude (deg); the triangle is the station.  '
-             'red = arrivals LATER than the 1-D model predicts (real path slower); '
-             'blue = earlier.\n'
-             'grey = no event within reach of the smoothing kernel - the field '
-             'there is only the station static term.\n'
-             f'Nothing is interpolated: every cell is one independent evaluation, '
-             f'{lat_km:.1f} km x {lon_km:.1f} km apart - the smoothness is the '
-             f'kernel itself. Panels with L below that spacing are undersampled.',
-             fontsize=7.5, color='0.30', linespacing=1.5)
+    return fig
 
 
 def make_atlas(params, cache, fields_list, path):
@@ -739,9 +807,12 @@ def make_atlas(params, cache, fields_list, path):
             if fields is None:
                 continue
             lat, lon = station_coords[zone].get(station, (np.nan, np.nan))
-            fig = plt.figure(figsize=(15, 9))
+            lat_km, lon_km = _node_spacing_km(fields['lats'], fields['lons'])
+            fig = station_page(
+                fields, lat, lon, params.width_cm,
+                header=f'{station}  {phase}-phase   zone {zone}   depth slice '
+                       f'{fields["depth"]:.1f} km   nodes {lat_km:.1f} x {lon_km:.1f} km')
             try:
-                atlas_page(fig, fields, station, phase, zone, lat, lon)
                 pdf.savefig(fig)
             finally:
                 plt.close(fig)
@@ -749,6 +820,47 @@ def make_atlas(params, cache, fields_list, path):
             if drawn % 25 == 0:
                 logger.info('  ... %d / %d pages', drawn, len(fields_list))
     logger.info('atlas: %d pages -> %s', drawn, path)
+
+
+def make_page(params, station, phase, zone=None, path=None):
+    """
+    One station page as its own figure (.png + .pdf), no header strip.
+
+    zone None = the zone where this field has the most usable arrivals, as
+    the atlas chooses it.
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    if zone is None:
+        census = station_census(load_all(params, iterations=[0]), params.zones)
+        counts = {z: n for (s, p, z), n in census.items() if s == station and p == phase}
+        if not counts:
+            raise SystemExit(f'{station}:{phase} has no usable arrival in {params.run_name}')
+        zone = max(counts, key=counts.get)
+    params.zones = [zone]
+
+    cache  = load_all(params, iterations=range(len(_CHAR_DISTS)))
+    fields = station_fields(cache, zone, station, phase, params.depth,
+                            params.map_spacing, params.extent)
+    if fields is None:
+        raise SystemExit(f'{station}:{phase} has no field in zone {zone}')
+    sta_lat, sta_lon = read_station_latlon(zone).get(station, (np.nan, np.nan))
+
+    path = path or os.path.join(params.fig_dir, f'{params.run_name}_{station}_{phase}.png')
+    fig  = station_page(fields, sta_lat, sta_lon, params.width_cm)
+    base, _ = os.path.splitext(path)
+    outputs = []
+    for out in (f'{base}.png', f'{base}.pdf'):
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        fig.savefig(out)
+        outputs.append(out)
+        logger.info('page saved @ %s', out)
+    plt.close(fig)
+    logger.info('%s:%s  zone %d  depth slice %.1f km  arrivals %s',
+                station, phase, zone, fields['depth'], fields['n_arrivals'])
+    return outputs
 
 
 # ---------------------------------------------------------------------------
@@ -1013,6 +1125,8 @@ def make_spread_map(params, cache, path):
 def _setup_logger(verbose=True):
     logging.basicConfig(level=logging.INFO if verbose else logging.WARNING,
                         format='%(message)s', stream=sys.stdout)
+    # pdf.fonttype 42 subsets fonts through fontTools, which logs every table at INFO
+    logging.getLogger('fontTools').setLevel(logging.WARNING)
 
 
 def main():
@@ -1033,7 +1147,9 @@ def main():
                    help='shared map frame for every atlas page, as '
                         'lon0,lon1,lat0,lat1. Needs the = form when lon0 is '
                         'negative: --extent=-2.25,3.5,41.75,43.75. '
-                        'Default frames each page on its own station\'s events; '
+                        'Default frames each atlas page on its own station\'s events '
+                        '(the single page defaults to -2.25,3.5,41.75,43.75; '
+                        '"auto" frames it on its events too); '
                         'a shared frame makes pages comparable but is clipped '
                         "to each zone's LSGRID, off which no correction exists")
     p.add_argument('--stations', default=None,
@@ -1041,8 +1157,20 @@ def main():
                         'fields, e.g. FR.0041:P,RD.0038 - use with a small '
                         '--map-spacing for presentation-quality pages')
     p.add_argument('--product',
-                   choices=('atlas', 'spread', 'displacement', 'all'),
-                   default='all')
+                   choices=('atlas', 'spread', 'displacement', 'all', 'page'),
+                   default='all',
+                   help="'page' draws one station page as its own .png/.pdf "
+                        '(needs --station); not part of all')
+    p.add_argument('--station', default=None,
+                   help="'STA:PHASE' of the single page, e.g. CA.0051:S")
+    p.add_argument('--zone', type=int, default=None,
+                   help="zone of the single page (default: the station's "
+                        'best-sampled zone, as in the atlas)')
+    p.add_argument('--output', default=None,
+                   help='single page output; both .png and .pdf are written '
+                        '(default: complem_figures/ssst_corrections/<run>_<STA>_<PHASE>.png)')
+    p.add_argument('--width-cm', type=float, default=16.0,
+                   help='printed page width, i.e. your \\linewidth in cm (default: 16)')
     p.add_argument('--extract-only', action='store_true',
                    help='fill the parse cache and stop')
     args = p.parse_args()
@@ -1055,11 +1183,22 @@ def main():
         depth=args.depth,
         map_spacing=args.map_spacing,
         extent=(tuple(float(v) for v in args.extent.split(','))
-                if args.extent else None),
+                if args.extent and args.extent != 'auto' else None),
         product=args.product,
+        width_cm=args.width_cm,
     )
+    if params.product == 'page':
+        station, _, phase = (args.station or '').partition(':')
+        if phase not in ('P', 'S'):
+            p.error('--product page needs --station STA:PHASE, e.g. CA.0051:S')
+        if args.extent is None:
+            params.extent = _PAGE_EXTENT
     if params.extent is not None and len(params.extent) != 4:
         p.error('--extent needs exactly four numbers: lon0,lon1,lat0,lat1')
+
+    if params.product == 'page':
+        make_page(params, station, phase, args.zone, args.output)
+        return
 
     t0 = time.time()
     cache = load_all(params)

@@ -6,19 +6,19 @@ central Pyrenees coloured by depth, the profiles drawn on top and labelled
 X-X', a few towns for orientation, and an inset of the whole range with the
 frame of the main map.
 
-Profile convention (same as `cross_section.py` and `event_maps_report.py`)
-------------------------------------------------------------------------
+Profile convention (same as `cross_section.py` and `event_maps.py`)
+-----------------------------------------------------------------
     NAME LON0 LAT0 AZIMUTH LENGTH_KM HALF_WIDTH_KM
 * LON0/LAT0 is the START of the profile (label X), not its centre;
 * the swath is +/- HALF_WIDTH_KM perpendicular to the axis (`--width` of
   `cross_section.py`);
-* the geometry is `event_maps_report.profile_geometry` (flat Earth,
+* the geometry is `event_maps.profile_geometry` (flat Earth,
   1 deg = 111 km), so the rectangle drawn is exactly the strip that
   `cross_section.py` projects.
 
-Catalogue reading is `event_maps_report._read_catalog`, so the epicentre /
-depth choices are the same flags. Defaults: PDF expectation for both
-(`--position expect --column expect_z`) and no quality filter — the published
+Catalogue reading is `event_maps._read_catalog`, so the hypocentre choice is
+the same flag. Defaults: PDF expectation (`--solution expect`) and no quality
+filter — the published
 hypocentre, see CLAUDE.md §4.
 
 Usage (pygmt_env, from the repository root)
@@ -39,11 +39,16 @@ import argparse
 import os
 import tempfile
 
+import sys
+
 import pygmt as pg
 
-from event_maps_report import (
-    EventMapsReportParams,
-    DEFAULT_REGION as PYRENEES_REGION,
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+from complem_figures.event_maps import (  # noqa: E402
+    EventMapsParams,
+    REPORT_REGION as PYRENEES_REGION,
     _dest_point,
     _read_catalog,
     profile_geometry,
@@ -80,12 +85,11 @@ TOWNS = [
 # ---------------------------------------------------------------------------
 
 def generate_figure(args):
-    events = _read_catalog(EventMapsReportParams(
+    events = _read_catalog(EventMapsParams(
         fileBulletin = args.bulletin,
         figSave      = args.output,
         no_filter    = not args.filter,
-        depth_column = args.column,
-        position     = args.position,
+        solution     = args.solution,
     ))
     region = args.map_region or list(DEFAULT_REGION)
     lon_min, lon_max, lat_min, lat_max = region
@@ -144,7 +148,7 @@ def generate_figure(args):
 
     with pg.config(FONT_ANNOT_PRIMARY='7p', FONT_LABEL='7p'):
         fig.basemap(map_scale='jBL+w25k+o0.4c/0.5c+f+lkm')
-    label = 'Expectation depth' if args.column == 'expect_z' else 'Depth'
+    label = 'Expectation depth' if args.solution == 'expect' else 'Max-likelihood depth'
     with pg.config(FONT_ANNOT_PRIMARY='8p', FONT_LABEL='8p'):
         fig.colorbar(cmap=depth_cpt, position='JMR+o0.4c/0c+w6c/0.3c+ef',
                      frame=[f'a5f1+l{label} [km]'])
@@ -193,10 +197,9 @@ def main():
     p.add_argument('--map-region', nargs=4, type=float,
                    metavar=('LON_MIN', 'LON_MAX', 'LAT_MIN', 'LAT_MAX'),
                    help=f'Main map extent (default: {" ".join(map(str, DEFAULT_REGION))})')
-    p.add_argument('--column', default='expect_z', choices=['depth', 'expect_z'],
-                   help='Depth column of a result CSV (default: expect_z)')
-    p.add_argument('--position', default='expect', choices=['maxlike', 'expect'],
-                   help='Epicentre of a result CSV (default: expect)')
+    p.add_argument('--solution', default='expect', choices=['expect', 'maxlike'],
+                   help='Hypocentre of a result CSV: PDF expectation (default) '
+                        'or maximum likelihood')
     p.add_argument('--filter', action='store_true',
                    help="Apply event_maps' erh/erv/gap/rms filter (default: off)")
     p.add_argument('--max-depth', type=float, default=15.0,

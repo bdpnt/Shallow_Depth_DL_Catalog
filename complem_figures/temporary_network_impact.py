@@ -12,10 +12,13 @@ no relocation mixed in.
 
 Two figures are produced from a single pass over each bulletin:
 
-  phase_count_timeline.pdf     Two chronological strips, 1978 -> 2025, coloured by
-                               the monthly median number of phases per event. Upper
-                               strip before augmentation, lower strip after, on a
-                               shared colour scale so the two are comparable.
+  phase_count_timeline.png/.pdf
+                               Two chronological strips, 1978 -> 2025, coloured by
+                               the monthly median number of phases per event. Strip
+                               (a) before augmentation, (b) after, on a shared colour
+                               scale so the two are comparable. Drawn at its printed
+                               size (--width-cm, default 16 cm = \\linewidth of an A4
+                               page with 2.5 cm margins), vector PDF + 300 dpi PNG.
 
   nearest_station_distance.pdf Overlapping histograms of the distance from each
                                event to its closest recording station, before and
@@ -47,6 +50,7 @@ import os
 import sys
 from dataclasses import dataclass
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -72,6 +76,10 @@ _COLOR_BEFORE = '#2c7fb8'
 _COLOR_AFTER  = '#d95f02'
 _COLOR_EMPTY  = '#d9d9d9'
 
+_INK       = '#1A1A1A'
+_INK_MUTED = '#5A5A5A'
+_CM        = 1 / 2.54
+
 _NEAR_KM = 5.0   # "a station within N km", reported in the distance panels
 
 
@@ -91,6 +99,9 @@ class TempNetworkImpactParams:
     vmax:          float = None
     max_distance:  float = 60.0    # distance axis limit (km)
     distance_bin:  float = 1.0     # distance histogram bin width (km)
+    width_cm:      float = 16.0    # timeline: printed width (cm)
+    height_cm:     float = 5.0     # timeline: printed height (cm)
+    tags:          tuple = ('a', 'b')   # timeline: strip tags; (None, None) for none
 
 
 # ---------------------------------------------------------------------------
@@ -228,9 +239,33 @@ def _monthly_medians(frame, bin_months):
     return edges, medians
 
 
+def _style():
+    mpl.rcParams.update({
+        'font.family':       'sans-serif',
+        'font.size':         8,
+        'axes.labelsize':    9,
+        'xtick.labelsize':   8,
+        'ytick.labelsize':   8,
+        'axes.edgecolor':    _INK_MUTED,
+        'axes.linewidth':    0.6,
+        'xtick.color':       _INK,
+        'ytick.color':       _INK,
+        'xtick.major.width': 0.6,
+        'xtick.major.size':  3,
+        'ytick.major.width': 0.6,
+        'ytick.major.size':  3,
+        'text.color':        _INK,
+        'axes.labelcolor':   _INK,
+        'pdf.fonttype':      42,
+        'ps.fonttype':       42,
+        'savefig.dpi':       300,
+    })
+
+
 def _plot_timeline(before, after, output_path, parameters):
-    """Two chronological strips coloured by the median phase count per time bin."""
-    sns.set_theme()
+    """Two chronological strips coloured by the median phase count per time bin,
+    on a shared colour scale, sized for a \\linewidth figure; writes .png and .pdf."""
+    _style()
 
     edges, med_before = _monthly_medians(before, parameters.bin_months)
     _,     med_after  = _monthly_medians(after,  parameters.bin_months)
@@ -239,48 +274,55 @@ def _plot_timeline(before, after, output_path, parameters):
     # comparable rather than two independently-normalised pictures.
     finite = np.concatenate([med_before[np.isfinite(med_before)],
                              med_after[np.isfinite(med_after)]])
-    vmin   = parameters.vmin if parameters.vmin is not None else float(finite.min())
+    vmin = parameters.vmin if parameters.vmin is not None else float(finite.min())
     # A single month out of ~1100 reaches ~52 phases; scaling to it would spend half
     # the colour ramp on one bin and flatten the rest. Clip to p99 and let the
     # colorbar declare the overflow.
-    vmax   = parameters.vmax if parameters.vmax is not None else float(np.percentile(finite, 99))
+    vmax = parameters.vmax if parameters.vmax is not None else float(np.percentile(finite, 99))
 
     cmap = plt.get_cmap('viridis').copy()
     cmap.set_bad(_COLOR_EMPTY)
 
-    fig, axes = plt.subplots(2, 1, sharex=True, figsize=(13, 4.2), layout='constrained')
+    fig, axes = plt.subplots(2, 1, sharex=True, layout='constrained',
+                             figsize=(parameters.width_cm * _CM, parameters.height_cm * _CM))
+    fig.get_layout_engine().set(h_pad=0.02, hspace=0.04, w_pad=0.02)
 
-    panels = ((axes[0], med_before, 'before'),
-              (axes[1], med_after,  'after'))
-
-    for axis, medians, label in panels:
-        mesh = axis.pcolormesh(edges, [0, 1],
-                               np.ma.masked_invalid(medians)[None, :],
+    for axis, medians, tag in zip(axes, (med_before, med_after), parameters.tags):
+        mesh = axis.pcolormesh(edges, [0, 1], np.ma.masked_invalid(medians)[None, :],
                                cmap=cmap, shading='flat', vmin=vmin, vmax=vmax,
                                rasterized=True)
         axis.set_yticks([])
-        axis.set_ylabel(f'{label}\ntemporary picks', rotation=0,
-                        ha='right', va='center', fontsize=9)
-        axis.grid(False)
+        for side in ('top', 'right', 'left', 'bottom'):
+            axis.spines[side].set_visible(False)
+        if tag:
+            # in the left margin, level with the top of the strip — nothing over the data
+            axis.text(-0.012, 1.0, tag, transform=axis.transAxes, ha='right', va='top',
+                      fontsize=10, fontweight='bold')
 
+    axes[0].tick_params(axis='x', length=0)
     axes[1].set_xlabel('Year')
     axes[1].set_xlim(edges[0], edges[-1])
     axes[1].set_xticks(np.arange(np.ceil(edges[0] / 5) * 5, edges[-1], 5))
     axes[1].xaxis.set_major_formatter(lambda value, _: f'{value:.0f}')
 
-    bin_label = ('monthly' if parameters.bin_months == 1
-                 else f'{parameters.bin_months}-month')
-    fig.colorbar(mesh, ax=axes, label=f'Median phases per event ({bin_label})',
-                 pad=0.01, extend='max' if finite.max() > vmax else 'neither')
-    fig.suptitle('Phases available per event, before and after the temporary networks',
-                 fontweight='bold')
+    bin_label = 'monthly' if parameters.bin_months == 1 else f'{parameters.bin_months}-month'
+    cbar = fig.colorbar(mesh, ax=axes, pad=0.01, fraction=0.03, aspect=18,
+                        extend='max' if finite.max() > vmax else 'neither')
+    cbar.set_label(f'Median phases\nper event ({bin_label})')
+    cbar.outline.set_linewidth(0.6)
+    cbar.ax.tick_params(width=0.6, length=3)
+    cbar.ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path)
+    base, _ = os.path.splitext(output_path)
+    outputs = []
+    for path in (f'{base}.png', f'{base}.pdf'):
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        fig.savefig(path)
+        outputs.append(path)
+        print(f'Figure saved @ {path}')
     plt.close(fig)
-
-    print(f'Figure saved @ {output_path}')
-    return output_path
+    print(f'Colour scale : {vmin:g} - {vmax:g} phases')
+    return outputs
 
 
 def _plot_distance(merged, output_path, parameters):
@@ -388,9 +430,9 @@ def generate_figures(parameters):
 
     outputs = []
     if parameters.product in ('both', 'timeline'):
-        outputs.append(_plot_timeline(
+        outputs += _plot_timeline(
             before, after,
-            os.path.join(output_dir, 'phase_count_timeline.pdf'), parameters))
+            os.path.join(output_dir, 'phase_count_timeline.png'), parameters)
     if parameters.product in ('both', 'distance'):
         outputs.append(_plot_distance(
             merged,
@@ -432,11 +474,17 @@ def main():
     parser.add_argument('--vmin',          type=float, default=None,
                         help='Timeline colour scale minimum (default: data range)')
     parser.add_argument('--vmax',          type=float, default=None,
-                        help='Timeline colour scale maximum (default: data range)')
+                        help='Timeline colour scale maximum (default: pooled p99)')
     parser.add_argument('--max-distance',  type=float, default=60.0,
                         help='Distance axis limit in km (default: 60.0)')
     parser.add_argument('--distance-bin',  type=float, default=1.0,
                         help='Distance histogram bin width in km (default: 1.0)')
+    parser.add_argument('--width-cm',      type=float, default=16.0,
+                        help='Timeline printed width, i.e. your \\linewidth in cm (default: 16)')
+    parser.add_argument('--height-cm',     type=float, default=5.0,
+                        help='Timeline printed height in cm (default: 5)')
+    parser.add_argument('--no-tags',       action='store_true',
+                        help='Omit the "a" / "b" tags of the timeline strips')
     args = parser.parse_args()
 
     generate_figures(TempNetworkImpactParams(
@@ -450,6 +498,9 @@ def main():
         vmax          = args.vmax,
         max_distance  = args.max_distance,
         distance_bin  = args.distance_bin,
+        width_cm      = args.width_cm,
+        height_cm     = args.height_cm,
+        tags          = (None, None) if args.no_tags else ('a', 'b'),
     ))
 
 

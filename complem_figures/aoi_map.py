@@ -1,6 +1,6 @@
 """
-aoi_map_report.py
-============================
+aoi_map.py
+==========
 Report-ready map of the Area of Interest applied to the source bulletins
 (report 03, D-11) -- the figure for the AOI paragraph of the deliverable.
 
@@ -30,8 +30,8 @@ and a vector PDF.  Needs `pygmt_env`.
 
 Usage
 -----
-    conda run -n pygmt_env python complem_figures/aoi_map_report.py \
-        --output complem_figures/aoi_map/aoi_map_report.png
+    conda run -n pygmt_env python complem_figures/aoi_map.py \
+        --output complem_figures/aoi_map/aoi_map.png
 """
 
 import argparse
@@ -93,7 +93,7 @@ BORDER_PEN         = '0.9p,black'
 
 @dataclass
 class AOIMapParams:
-    figSave:     str         = 'complem_figures/aoi_map/aoi_map_report.png'
+    figSave:     str         = 'complem_figures/aoi_map/aoi_map.png'
     map_region:  List[float] = field(default_factory=lambda: list(DEFAULT_REGION))
     width:       str         = '6i'
     backend:     str         = 'pygmt'
@@ -324,7 +324,7 @@ def _render_mpl(parameters, ev_resif, ev_ignicgc):
 # Public API
 # ---------------------------------------------------------------------------
 
-def aoi_map_report(parameters):
+def generate_figure(parameters):
     ev_resif = ev_ignicgc = (np.array([]), np.array([]))
     if not parameters.no_events:
         print('RESIF')
@@ -348,7 +348,7 @@ def aoi_map_report(parameters):
 def main():
     parser = argparse.ArgumentParser(
         description='Map of the per-source Area of Interest (report 03, D-11).')
-    parser.add_argument('--output', default='complem_figures/aoi_map/aoi_map_report.png')
+    parser.add_argument('--output', default='complem_figures/aoi_map/aoi_map.png')
     parser.add_argument('--backend', choices=['pygmt', 'mpl'], default='pygmt')
     parser.add_argument('--map-region', nargs=4, type=float, default=DEFAULT_REGION,
                         metavar=('LON_MIN', 'LON_MAX', 'LAT_MIN', 'LAT_MAX'))
@@ -375,7 +375,7 @@ def main():
         land=args.land,
         water=args.water,
     )
-    aoi_map_report(params)
+    generate_figure(params)
 
 
 if __name__ == '__main__':
