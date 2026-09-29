@@ -106,18 +106,29 @@ Shallow_Depth_DL_Catalog/
 │
 ├── complem_figures/          # Visualization & statistical analysis
 │   ├── event_maps.py
+│   ├── profile_location_map.py
+│   ├── aoi_map.py
+│   ├── source_depth_maps.py
 │   ├── depth_maps.py
 │   ├── error_maps.py
+│   ├── error_vs_quality.py
 │   ├── depth_histogram.py
+│   ├── depth_histogram_compare.py
 │   ├── gutenberg_richter.py
+│   ├── magnitude_regression.py
 │   ├── cross_section.py
+│   ├── cross_section_panels.py
 │   ├── station_map.py
 │   ├── zone_map.py
+│   ├── network_history.py
 │   ├── event_ranking.py
 │   ├── plot_pdf_cloud.py
+│   ├── plot_pdf_cloud_2d.py
 │   ├── ssst_evolution.py
 │   ├── ssst_corrections.py
-│   └── station_colocation.py
+│   ├── temporary_network_impact.py
+│   ├── station_colocation.py
+│   └── basemap_lines.py      # GMT borders/shorelines cached for the matplotlib maps
 │
 ├── zone_Arette/              # Focused analysis of the Arette seismic zone
 │
@@ -566,22 +577,32 @@ Two driver scripts run the `complem_figures/` modules:
 - `generate_complem_figures.py` — matplotlib figures: depth histograms, Gutenberg-Richter distributions, and per-period depth and error maps
 - `generate_complem_maps.py` — PyGMT event maps for each of the 6 NLL zones and the final catalog
 
-Each module can also be run standalone:
+Each module can also be run standalone. Most figures are drawn at their printed size (`--width-cm`, default 16 cm = `\linewidth` of an A4 page with 2.5 cm margins) and written as both a 300 dpi PNG and a vector PDF, so the report includes them at scale 1. Every module reading a `RESULT/*.csv` places events at the **PDF expectation** by default; `--solution maxlike` switches to the maximum-likelihood point (`maxlike_*` columns, or `latitude`/`longitude`/`depth` in a CSV written before `SAVE_NLLOC_EXPECTATION`). `cross_section.py` is the exception and still reads `latitude`/`longitude`/`depth`.
 
 | Script | Description |
 |--------|-------------|
-| `event_maps.py` | Geographic maps of seismicity (from `.obs`, `.txt`, or `.csv` NLL summary) |
+| `event_maps.py` | PyGMT map of seismicity coloured by depth (from `.obs` or a result `.csv`), with optional zone boxes, stations and cross-section overlays (`--profile`, `--profiles-default`) |
+| `profile_location_map.py` | Location map of the cross-section profiles, labelled X–X′, with towns and a whole-range inset |
+| `aoi_map.py` | The AOI boundary lines of `global_obs/filter_events_by_aoi.py` over the filtered RESIF and IGN+ICGC epicentres (read-only) |
+| `source_depth_maps.py` | Two source bulletins side by side (IGN / LDG by default), coloured by depth, sized by magnitude |
 | `depth_maps.py` | Per-period windowed-median depth maps |
-| `error_maps.py` | Per-period spatial distribution of location uncertainties (ERH, ERV) |
+| `error_maps.py` | Windowed-median ERH/ERV maps, one page per `--time-range`-year period or a single `--start`/`--end` page |
+| `error_vs_quality.py` | Published ERH/ERZ against RMS, azimuthal gap, phase count and nearest-station distance |
 | `depth_histogram.py` | Histogram of event depths |
+| `depth_histogram_compare.py` | Depths of the same events before relocation, at the expectation and at maximum likelihood, three stacked panels |
 | `gutenberg_richter.py` | Magnitude-frequency distribution (Gutenberg-Richter law) |
-| `cross_section.py` | Vertical cross-sections of seismicity |
+| `magnitude_regression.py` | The three magnitude-conversion regressions of `global_obs/generate_magnitude_models.py` as one figure |
+| `cross_section.py` | Map + vertical cross-section of seismicity along one profile |
+| `cross_section_panels.py` | Several depth sections of one profile side by side (default: Aneto before relocation / NLL / NLL-SSST) |
 | `station_map.py` | Map of seismic stations |
 | `zone_map.py` | Overview map of the 6 NLL relocation zones |
+| `network_history.py` | Seismicity per year, stations per year and temporary deployments on one time axis |
+| `temporary_network_impact.py` | What the external picks of `add_temp_picks.py` added: phase-count timeline before/after, and distance to the nearest station |
 | `event_ranking.py` | Ranks events by pdfVolume/ellipsoidVolume change (NLL → SSST); flags multi-zone and zone-changed events; carries the PDF-quality columns (Ψ, C_68, dip test) when present; optional whole-region gridmap PDF |
 | `plot_pdf_cloud.py` | Interactive 3D Plotly visualization of one event's NLLoc PDF scatter-cloud across SSST iterations |
+| `plot_pdf_cloud_2d.py` | Static 2-D view of the same cloud for one iteration: map view and vertical section, with the projected confidence ellipsoid |
 | `ssst_evolution.py` | Per-zone plot of pdfVolume/EllipsoidLen3/RMS evolution across SSST iterations (convergence QC) |
-| `ssst_corrections.py` | Reconstructs and maps the SSST travel-time corrections themselves — a per-station/phase atlas, the across-station spread, and the displacement SSST actually produced (see [below](#mapping-the-ssst-corrections--complem_figuresssst_correctionspy)) |
+| `ssst_corrections.py` | Reconstructs and maps the SSST travel-time corrections themselves — a per-station/phase atlas (or a single page), the across-station spread, and the displacement SSST actually produced (see [below](#mapping-the-ssst-corrections--complem_figuresssst_correctionspy)) |
 | `station_colocation.py` | Diagnostic for the 20 m co-location radius of [§1](#1-station-inventory-fusion): the observed distribution of station separations against what the merge actually merged |
 
 `event_ranking.py`, `plot_pdf_cloud.py`, and `ssst_evolution.py` are standalone diagnostics for the SSST stage, run directly rather than wired into `generate_complem_figures.py` / `generate_complem_maps.py`; they read `RESULT/NLL_result.csv`, `RESULT/SSST_result.csv`, and the per-zone `run/nll_loc/` / `run/ssst_loc/<run-name>/` outputs directly. `event_ranking.py` picks up the PDF-quality columns (Ψ, C_68, dip test) automatically once `NLL_run/pdf_metrics.py` has annotated `SSST_result.csv`, and runs without them otherwise — they are post-SSST only, since `run/nll_loc/` holds no `.scat` clouds to compare against. It also shares that module's windowed-grid helper (`windowed_stat_grid`), so its gridmaps and the PDF-metric maps bin space identically.
@@ -608,7 +629,7 @@ The distance is **event-to-grid-node** — the station's own position never ente
 
 Two products, from one reconstruction:
 
-- `<run>_station_atlas.pdf` — one page per station×phase field (all 300 with ≥ 100 usable arrivals, `--min-picks`): the five increments (`9999 → 50 → 15 → 5 → 1 km`) then their cumulative total, as depth-slice maps on a shared diverging scale. Nodes with no event inside the smoothing kernel are greyed — the field there is only the station static term. A station falling in two zones is drawn in the zone where it has the most arrivals, since the two zones ran separate `Loc2ssst` passes over different event sets and their fields are independent.
+- `<run>_station_atlas.pdf` — one page per station×phase field (all 300 with ≥ 100 usable arrivals, `--min-picks`): the five increments (`9999 → 50 → 15 → 5 → 1 km`, panels a–e) then their cumulative total (f), as depth-slice maps on a shared diverging scale, 3 rows × 2 at printed width with a one-line station header. `--product page --station STA:PHASE` writes a single such page, without header, as `<run>_<STA>_<PHASE>.png/.pdf`. Nodes with no event inside the smoothing kernel are greyed — the field there is only the station static term. A station falling in two zones is drawn in the zone where it has the most arrivals, since the two zones ran separate `Loc2ssst` passes over different event sets and their fields are independent.
 - `<run>_spread_map.pdf` — one catalog-wide map: at each event, the spread **across its recording stations** of the total correction applied to its P picks. A correction common to every station of an event is absorbed exactly by the origin time and cannot move the hypocentre, so the across-station dispersion, not the mean, is the part of the field that *can* relocate. It is **not** a map of where SSST actually did relocate — see the caveat below.
 
 ```bash
@@ -619,6 +640,8 @@ python complem_figures/ssst_corrections.py --extract-only    # fill the parse ca
 # presentation-quality pages for two chosen fields (~55 s each)
 python complem_figures/ssst_corrections.py --product atlas \
     --stations FR.0041:P,RD.0038:P --map-spacing 0.005
+# one page on its own, for the report
+python complem_figures/ssst_corrections.py --product page --station CA.0051:S
 ```
 
 Parsing the ~276 k per-event `.hyp` files takes ~100 s and is cached as `.npz` per (zone, iteration) in `run/ssst_corrections_cache/` (33 MB), so only the first run pays for it.
