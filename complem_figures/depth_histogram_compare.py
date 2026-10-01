@@ -22,6 +22,9 @@ Usage
         --before obs/GLOBAL.obs --after RESULT/SSST_result.csv \\
         --output complem_figures/depth_histogram/GLOBAL_vs_SSST.png \\
         --bin-size 0.2 --min-depth -3 --max-depth 25
+
+`--before-year 2020` restricts all three panels to events dated before 2020
+(the year is read from the .obs event line).
 """
 
 import argparse
@@ -46,16 +49,17 @@ _ML_COL     = '#55A868'   # seaborn deep green: maximum likelihood, panel (c)
 
 
 def read_obs_depths(path):
-    """(publicId, depth) for every event of a .obs bulletin."""
-    rows, dep = [], None
+    """(publicId, depth, year) for every event of a .obs bulletin."""
+    rows, dep, year = [], None, None
     with open(path) as f:
         for line in f:
             if line.startswith('# '):
-                dep = float(line.split()[9])
+                fields = line.split()
+                year, dep = int(fields[1]), float(fields[9])
             elif line.startswith('PUBLIC_ID') and dep is not None:
-                rows.append((line.split()[1], dep))
+                rows.append((line.split()[1], dep, year))
                 dep = None
-    return pd.DataFrame(rows, columns=['publicId', 'dep_before'])
+    return pd.DataFrame(rows, columns=['publicId', 'dep_before', 'year'])
 
 
 def fmt_int(n):
@@ -64,14 +68,16 @@ def fmt_int(n):
 
 def generate_figure(before, after, output, max_err=None,
                     bin_size=0.2, min_depth=-3.0, max_depth=25.0,
-                    also_pdf=True):
+                    also_pdf=True, before_year=None):
     b = read_obs_depths(before)
+    if before_year is not None:
+        b = b[b['year'] < before_year]
     a = pd.read_csv(after)
     _, _, column    = hypocentre_columns(a, 'expect')
     _, _, column_ml = hypocentre_columns(a, 'maxlike')
     a = a[['publicId', column, column_ml, 'true_erh', 'true_erz']].rename(
         columns={column: 'dep_after', column_ml: 'dep_ml'})
-    m = b.merge(a, on='publicId', how='inner').dropna()
+    m = b.merge(a, on='publicId', how='inner').drop(columns='year').dropna()
     n = len(m)
 
     z0, z1 = m['dep_before'].to_numpy(), m['dep_after'].to_numpy()
@@ -161,10 +167,13 @@ def main():
     p.add_argument('--max-err', type=float, default=None,
                    help='keep in panels (b) and (c) only events with ERH and '
                         'ERZ both <= this value (km); panel (a) is unfiltered')
+    p.add_argument('--before-year', type=int, default=None,
+                   help='keep only events strictly before this year '
+                        '(2020 keeps 1978-2019)')
     p.add_argument('--no-pdf', action='store_true')
     a = p.parse_args()
     generate_figure(a.before, a.after, a.output, a.max_err, a.bin_size,
-                    a.min_depth, a.max_depth, not a.no_pdf)
+                    a.min_depth, a.max_depth, not a.no_pdf, a.before_year)
 
 
 if __name__ == '__main__':

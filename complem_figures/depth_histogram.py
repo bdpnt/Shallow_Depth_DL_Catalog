@@ -21,6 +21,10 @@ Usage
     python complem_figures/depth_histogram.py \\
         --bulletin RESULT/SSST_result.csv --min-depth -3 \\
         --output   complem_figures/depth_histogram/SSST_result.png
+
+    python complem_figures/depth_histogram.py \\
+        --bulletin RESULT/SSST_result.csv --min-depth -3 --before-year 2020 \\
+        --output   complem_figures/depth_histogram/SSST_result_before_2020.png
 """
 
 import argparse
@@ -54,17 +58,21 @@ class DepthHistogramParams:
     max_depth:     float = 40.0
     min_depth:     float = 0.0
     solution:      str   = 'expect'   # csv input only: 'expect' | 'maxlike'
+    before_year:   int | None = None  # keep only events with year < before_year
     also_pdf:      bool  = True
 
 
-def _read_depths(file_bulletin, solution='expect'):
+def _read_depths(file_bulletin, solution='expect', before_year=None):
     """Depths from a .obs bulletin, or from a RESULT/*.csv for the chosen solution.
 
     ``solution`` only applies to a .csv input; the .obs files carry whichever
-    solution was published when they were written.
+    solution was published when they were written. ``before_year`` keeps only
+    events strictly earlier than that year.
     """
     if file_bulletin.lower().endswith('.csv'):
         df = pd.read_csv(file_bulletin)
+        if before_year is not None:
+            df = df[pd.to_datetime(df['date-time']).dt.year < before_year]
         _, _, col = hypocentre_columns(df, solution)
         return df[col].dropna()
 
@@ -76,11 +84,14 @@ def _read_depths(file_bulletin, solution='expect'):
         'Lat', 'Lon', 'Dep', 'Mag', 'MagType', 'MagAuthor',
         'PhaseCount', 'HorUncer', 'VerUncer', 'AzGap', 'RMS',
     ])
+    if before_year is not None:
+        bull_df = bull_df[pd.to_numeric(bull_df['Year']) < before_year]
     return pd.to_numeric(bull_df['Dep'], errors='coerce').dropna()
 
 
 def generate_figure(parameters):
-    depths = _read_depths(parameters.file_bulletin, parameters.solution)
+    depths = _read_depths(parameters.file_bulletin, parameters.solution,
+                          parameters.before_year)
 
     n_total  = len(depths)
     median   = depths.median()
@@ -131,7 +142,9 @@ def generate_figure(parameters):
 
     ax.set_title(
         f'Depth distribution  —  N = {n_total:,}'.replace(',', ' ')
-        + f', median = {median:.1f} km',
+        + f', median = {median:.1f} km'
+        + (f', before {parameters.before_year}'
+           if parameters.before_year is not None else ''),
         pad=10)
 
     fig.savefig(parameters.fig_save, dpi=300)
@@ -167,6 +180,9 @@ def main():
     parser.add_argument('--solution', default='expect', choices=['expect', 'maxlike'],
                         help='Depth of a RESULT/*.csv: PDF expectation (default) '
                              'or maximum likelihood')
+    parser.add_argument('--before-year', type=int, default=None,
+                        help='Keep only events strictly before this year '
+                             '(2020 keeps 1978-2019)')
     parser.add_argument('--no-pdf', action='store_true')
     args = parser.parse_args()
 
@@ -177,6 +193,7 @@ def main():
         max_depth=args.max_depth,
         min_depth=args.min_depth,
         solution=args.solution,
+        before_year=args.before_year,
         also_pdf=not args.no_pdf,
     ))
 
