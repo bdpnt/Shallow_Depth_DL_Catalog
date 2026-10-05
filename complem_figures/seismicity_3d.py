@@ -344,7 +344,7 @@ function eventTrace() {
           x, y, z, text, hovertemplate: '%{text}<extra></extra>', showlegend: false,
           marker: {size: sz, color: z, colorscale: 'Viridis', reversescale: true,
                    cmin: D.zrange[0], cmax: Math.min(D.zrange[1], 25),
-                   opacity: state.sel === null ? 0.85 : 0.08, line: {width: 0},
+                   line: {width: 0},
                    colorbar: {title: {text: 'Depth (km)'}, thickness: 12, len: 0.6}}};
 }
 
@@ -400,9 +400,14 @@ function layout() {
 }
 
 const plot = document.getElementById('plot');
-function draw() {
-  state.vis = visible();
-  Plotly.react(plot, [eventTrace(), ...surfaceTraces(), ...selectionTraces()], layout(),
+// The event trace is rebuilt only when the stage or a filter changes.  A
+// selection reuses the same arrays, so Plotly.react sees the data unchanged
+// and only restyles the opacity and the two small selection traces.
+let events = null;
+function draw(rebuild = true) {
+  if (rebuild) { state.vis = visible(); events = eventTrace(); }
+  const ev = {...events, marker: {...events.marker, opacity: state.sel === null ? 0.85 : 0.08}};
+  Plotly.react(plot, [ev, ...surfaceTraces(), ...selectionTraces()], layout(),
                {responsive: true, displaylogo: false});
   const n = S[state.stage].n;
   document.getElementById('count').textContent =
@@ -451,7 +456,7 @@ function renderInfo() {
   }
   h += '<button class="clear" id="clear">Clear</button>';
   el.innerHTML = h;
-  document.getElementById('clear').onclick = () => { state.sel = null; draw(); };
+  document.getElementById('clear').onclick = () => { state.sel = null; draw(false); };
 }
 
 // Controls
@@ -470,14 +475,31 @@ exag.oninput = () => {
   state.exag = +exag.value; exagv.textContent = '×' + state.exag;
   Plotly.relayout(plot, {'scene.aspectratio': aspect()});
 };
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.sel !== null) { state.sel = null; draw(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.sel !== null) { state.sel = null; draw(false); } });
 
 draw();
+
+// Selection.  In a 3-D scene Plotly emits plotly_click from its render loop on
+// *every frame* while a button is held over a point — including the whole of
+// a drag that rotates the view.  Redrawing from that handler re-triggers the
+// render and loops.  So the handler only records the point under the cursor;
+// the selection is committed on button release, if the pointer did not move
+// (a click, not a rotation), outside Plotly's render loop.
+let press = null, candidate = null;
+plot.addEventListener('pointerdown', e => { press = [e.clientX, e.clientY]; candidate = null; }, true);
+plot.addEventListener('pointerup', e => {
+  const still = press && Math.hypot(e.clientX - press[0], e.clientY - press[1]) < 5;
+  const pid = candidate;
+  press = null; candidate = null;
+  if (still && pid !== null && pid !== state.sel) {
+    state.sel = pid;
+    setTimeout(() => draw(false), 0);
+  }
+}, true);
 plot.on('plotly_click', ev => {
   const p = ev.points[0];
-  if (p.curveNumber !== 0) return;   // only the event trace selects
-  state.sel = S[state.stage].c.pid[state.vis[p.pointNumber]];
-  draw();
+  if (press === null || p.curveNumber !== 0) return;   // only the event trace selects
+  candidate = S[state.stage].c.pid[state.vis[p.pointNumber]];
 });
 </script>
 </body>
