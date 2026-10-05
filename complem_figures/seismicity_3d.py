@@ -21,7 +21,9 @@ dims the rest of the catalog, fills a side panel with its metadata at all
 three stages, and draws its pre → NLL → SSST trajectory.  Filters: year
 range, minimum magnitude, and "usable only" (SSST — the same `pyr:usable`
 test as the QuakeML export, imported from `NLL_run/export_quakeml.classify`).
-A slider sets the vertical exaggeration.
+A slider sets the vertical exaggeration.  The depth axis stops at
+`--max-depth` (40 km); deeper events are hidden like a filter, since Plotly
+does not clip 3-D points to the axis range.
 
 Magnitudes are the merged-bulletin ones (`GLOBAL.obs`), joined on publicId
 into the two later stages, which carry the same rematched value; the result
@@ -165,7 +167,7 @@ def _encode_stage(df):
                      for c in df.columns}}
 
 
-def build_payload(obs_path, nll_path, ssst_path, solution, exaggeration):
+def build_payload(obs_path, nll_path, ssst_path, solution, exaggeration, max_depth):
     pre = read_obs_events(obs_path)
     print(f'pre-reloc  @ {obs_path}: {len(pre)} events')
     nll = read_result_csv(nll_path, solution)
@@ -185,7 +187,9 @@ def build_payload(obs_path, nll_path, ssst_path, solution, exaggeration):
     allz   = pd.concat([s[['lon', 'lat', 'z']] for s in stages.values()])
     box    = [float(np.floor(allz.lon.min() * 10) / 10), float(np.ceil(allz.lon.max() * 10) / 10),
               float(np.floor(allz.lat.min() * 10) / 10), float(np.ceil(allz.lat.max() * 10) / 10)]
-    zrange = [float(min(-3.0, np.floor(allz.z.min()))), float(np.ceil(allz.z.max()))]
+    zrange = [float(min(-3.0, np.floor(allz.z.min()))), float(max_depth)]
+    print(f'Hidden below {max_depth:g} km: '
+          + ', '.join(f'{k} {int((v.z > max_depth).sum())}' for k, v in stages.items()))
 
     stations = read_stations()
     stations = stations[(stations.lon.between(box[0], box[1])) & (stations.lat.between(box[2], box[3]))]
@@ -323,6 +327,7 @@ function visible() {
     if (y < state.ymin || y > state.ymax) continue;
     if (state.mmin !== null && !(st.c.mag[i] >= state.mmin)) continue;
     if (useU && !st.c.usable[i]) continue;
+    if (st.c.z[i] > D.zrange[1]) continue;
     out.push(i);
   }
   return out;
@@ -367,7 +372,7 @@ function selectionTraces() {
   const xs = [], ys = [], zs = [], cs = [], ts = [];
   for (const s of STAGES) {
     const i = S[s].idx.get(state.sel);
-    if (i === undefined) continue;
+    if (i === undefined || S[s].c.z[i] > D.zrange[1]) continue;
     xs.push(S[s].c.lon[i]); ys.push(S[s].c.lat[i]); zs.push(S[s].c.z[i]);
     cs.push(SCOL[s]); ts.push(LABEL[s]);
   }
@@ -375,7 +380,7 @@ function selectionTraces() {
                 x: xs, y: ys, z: zs, text: ts, hovertemplate: '%{text}<extra></extra>',
                 line: {color: '#24292f', width: 4}, marker: {size: 5, color: cs}}];
   const i = S[state.stage].idx.get(state.sel);
-  if (i !== undefined) {
+  if (i !== undefined && S[state.stage].c.z[i] <= D.zrange[1]) {
     const st = S[state.stage];
     out.push({type: 'scatter3d', mode: 'markers', name: 'Selected', showlegend: false,
               x: [st.c.lon[i]], y: [st.c.lat[i]], z: [st.c.z[i]], hoverinfo: 'skip',
@@ -532,10 +537,13 @@ def main():
                         help='relocated hypocentre: PDF expectation (default) or maximum likelihood')
     parser.add_argument('--exaggeration', type=float, default=5.0,
                         help='starting value of the vertical-exaggeration slider (default 5)')
+    parser.add_argument('--max-depth', type=float, default=40.0,
+                        help='bottom of the depth axis in km; deeper events are hidden (default 40)')
     parser.add_argument('--output', default=_DEFAULT_OUTPUT)
     args = parser.parse_args()
 
-    payload = build_payload(args.obs, args.nll, args.ssst, args.solution, args.exaggeration)
+    payload = build_payload(args.obs, args.nll, args.ssst, args.solution, args.exaggeration,
+                            args.max_depth)
     write_page(payload, args.output)
 
 
