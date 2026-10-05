@@ -14,7 +14,7 @@ camera.  Each stage shows **all** of its own events (57 856 / 50 918 /
 (zones not covered, too few phases), not relocation — the page prints each
 stage's count for that reason.
 
-Events are points coloured by depth and sized by magnitude; national borders
+Events are 1.5 px points coloured by depth; national borders
 and shorelines (the GMT cache of `basemap_lines.py`) and the stations NLLoc
 located with (`stations/GTSRCE_*.txt`) are drawn at z = 0.  Clicking an event
 dims the rest of the catalog, fills a side panel with its metadata at all
@@ -27,8 +27,8 @@ does not clip 3-D points to the axis range.
 
 Magnitudes are the merged-bulletin ones (`GLOBAL.obs`), joined on publicId
 into the two later stages, which carry the same rematched value; the result
-CSVs carry none.  `Mag 0.00` is the OMP placeholder and is drawn at the
-smallest size.  Relocated hypocentres are the PDF expectation by default
+CSVs carry none; they feed the hover, the panel and the magnitude filter
+(`Mag 0.00` is the OMP placeholder).  Relocated hypocentres are the PDF expectation by default
 (`--solution maxlike` for the maximum-likelihood point, see
 `event_maps.hypocentre_columns`).
 
@@ -333,21 +333,19 @@ function visible() {
   return out;
 }
 
-function size(m) { return Number.isNaN(m) || m <= 0 ? 1.5 : Math.min(12, 1.5 + 1.7 * m); }
-
 function eventTrace() {
   const st = S[state.stage], v = state.vis, n = v.length;
   const x = new Float32Array(n), y = new Float32Array(n), z = new Float32Array(n),
-        sz = new Float32Array(n), text = new Array(n);
+        text = new Array(n);
   for (let k = 0; k < n; k++) {
     const i = v[k];
-    x[k] = st.c.lon[i]; y[k] = st.c.lat[i]; z[k] = st.c.z[i]; sz[k] = size(st.c.mag[i]);
+    x[k] = st.c.lon[i]; y[k] = st.c.lat[i]; z[k] = st.c.z[i];
     text[k] = pidS(st.c.pid[i]) + '<br>' + date(st.c.t[i]) + '<br>M ' + magS(st, i)
               + '<br>depth ' + st.c.z[i].toFixed(2) + ' km';
   }
   return {type: 'scatter3d', mode: 'markers', name: LABEL[state.stage] + ' events',
           x, y, z, text, hovertemplate: '%{text}<extra></extra>', showlegend: false,
-          marker: {size: sz, color: z, colorscale: 'Viridis', reversescale: true,
+          marker: {size: 1.5, color: z, colorscale: 'Viridis', reversescale: true,
                    cmin: D.zrange[0], cmax: Math.min(D.zrange[1], 25),
                    line: {width: 0},
                    colorbar: {title: {text: 'Depth (km)'}, thickness: 12, len: 0.6}}};
@@ -384,7 +382,7 @@ function selectionTraces() {
     const st = S[state.stage];
     out.push({type: 'scatter3d', mode: 'markers', name: 'Selected', showlegend: false,
               x: [st.c.lon[i]], y: [st.c.lat[i]], z: [st.c.z[i]], hoverinfo: 'skip',
-              marker: {size: Math.max(9, size(st.c.mag[i]) + 4), color: SCOL[state.stage],
+              marker: {size: 9, color: SCOL[state.stage],
                        opacity: 1, line: {color: '#000', width: 2}}});
   }
   return out;
