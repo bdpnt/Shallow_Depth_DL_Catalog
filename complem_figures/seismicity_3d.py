@@ -18,7 +18,8 @@ Events are 1.5 px points coloured by depth; national borders
 and shorelines (the GMT cache of `basemap_lines.py`) and the stations NLLoc
 located with (`stations/GTSRCE_*.txt`) are drawn at z = 0.  Clicking an event
 dims the rest of the catalog, fills a side panel with its metadata at all
-three stages, and draws its pre → NLL → SSST trajectory.  Filters: year
+three stages, and draws its pre → NLL → SSST trajectory; "Auto-zoom" then
+frames the event's solutions on half the panel, keeping the viewing direction.  Filters: year
 range, minimum magnitude, and "usable only" (SSST — the same `pyr:usable`
 test as the QuakeML export, imported from `NLL_run/export_quakeml.classify`).
 A slider sets the vertical exaggeration.  The depth axis stops at
@@ -388,16 +389,28 @@ function selectionTraces() {
   return out;
 }
 
+// Axis ranges, in Plotly's [r0, r1] order (depth reversed).
+const RANGES = [[D.box[0], D.box[1]], [D.box[2], D.box[3]], [D.zrange[1], D.zrange[0]]];
+
+// The camera is passed explicitly on every Plotly.react, read back from the
+// live scene first, so that neither a redraw nor the auto-zoom loses the view.
+let camera = {eye: {x: 0.3, y: -1.6, z: 0.9}, center: {x: 0, y: 0, z: 0}, up: {x: 0, y: 0, z: 1}};
+function liveCamera() {
+  const sc = plot._fullLayout && plot._fullLayout.scene && plot._fullLayout.scene._scene;
+  if (sc) { const c = sc.getCamera(); camera = {eye: c.eye, center: c.center, up: c.up}; }
+  return camera;
+}
+
 function layout() {
   return {
     uirevision: 'keep', margin: {l: 0, r: 0, t: 0, b: 0},
     legend: {x: 0.01, y: 0.99, bgcolor: 'rgba(255,255,255,0.7)'},
     scene: {
       uirevision: 'keep', aspectmode: 'manual', aspectratio: aspect(),
-      xaxis: {title: {text: 'Longitude (°)'}, range: [D.box[0], D.box[1]]},
-      yaxis: {title: {text: 'Latitude (°)'}, range: [D.box[2], D.box[3]]},
-      zaxis: {title: {text: 'Depth (km)'}, range: [D.zrange[1], D.zrange[0]]},
-      camera: {eye: {x: 0.3, y: -1.6, z: 0.9}},
+      xaxis: {title: {text: 'Longitude (°)'}, range: RANGES[0]},
+      yaxis: {title: {text: 'Latitude (°)'}, range: RANGES[1]},
+      zaxis: {title: {text: 'Depth (km)'}, range: RANGES[2]},
+      camera: camera,
     },
   };
 }
@@ -410,6 +423,7 @@ let events = null;
 function draw(rebuild = true) {
   if (rebuild) { state.vis = visible(); events = eventTrace(); }
   const ev = {...events, marker: {...events.marker, opacity: state.sel === null ? 0.85 : 0.08}};
+  liveCamera();
   Plotly.react(plot, [ev, ...surfaceTraces(), ...selectionTraces()], layout(),
                {responsive: true, displaylogo: false});
   const n = S[state.stage].n;
@@ -457,9 +471,62 @@ function renderInfo() {
     if (ix[a] === undefined || ix[b] === undefined) continue;
     h += `<div>${LABEL[a]} → ${LABEL[b]}: ${dist(S[a], ix[a], S[b], ix[b])}</div>`;
   }
-  h += '<button class="clear" id="clear">Clear</button>';
+  h += '<button class="clear" id="zoom">Auto-zoom</button> <button class="clear" id="clear">Clear</button>';
   el.innerHTML = h;
   document.getElementById('clear').onclick = () => { state.sel = null; draw(false); };
+  document.getElementById('zoom').onclick = autoZoom;
+}
+
+// Auto-zoom.  Plotly places a value v of an axis with range [r0, r1] at
+// aspect·(v − (r0 + r1)/2)/(r1 − r0) in scene units — the box spans ±aspect/2
+// — and camera eye/center are in those units.  Its perspective has a 45°
+// vertical field of view, so from distance L the view is 2·L·tan(22.5°) high
+// (× width/height wide).  The camera is aimed at the centroid of the event's
+// solutions and keeps its current viewing direction; its distance is set so
+// that their projected spread covers half the panel, on whichever screen axis
+// it is wider.  Never closer than a 1 km sphere would allow, so that
+// solutions that coincide or line up with the view do not zoom without limit.
+function toScene(v) {
+  const a = aspect(), A = [a.x, a.y, a.z];
+  return v.map((u, k) => A[k] * (u - (RANGES[k][0] + RANGES[k][1]) / 2) / (RANGES[k][1] - RANGES[k][0]));
+}
+function autoZoom() {
+  const pts = [];
+  for (const s of STAGES) {
+    const i = S[s].idx.get(state.sel);
+    if (i === undefined || S[s].c.z[i] > D.zrange[1]) continue;
+    pts.push(toScene([S[s].c.lon[i], S[s].c.lat[i], S[s].c.z[i]]));
+  }
+  if (!pts.length) return;
+  const c = [0, 1, 2].map(k => pts.reduce((acc, p) => acc + p[k], 0) / pts.length);
+  const cam = liveCamera(), T = Math.tan(Math.PI / 8);
+  const box = plot.getBoundingClientRect(), wh = box.width / box.height;
+  const n = Math.hypot(cam.eye.x - cam.center.x, cam.eye.y - cam.center.y, cam.eye.z - cam.center.z) || 1;
+  const f = [(cam.center.x - cam.eye.x) / n, (cam.center.y - cam.eye.y) / n, (cam.center.z - cam.eye.z) / n];
+  const u = [cam.up.x, cam.up.y, cam.up.z];
+  const right = [f[1] * u[2] - f[2] * u[1], f[2] * u[0] - f[0] * u[2], f[0] * u[1] - f[1] * u[0]];
+  const rn = Math.hypot(...right);
+  const rx = right.map(v => v / rn);
+  const up = [rx[1] * f[2] - rx[2] * f[1], rx[2] * f[0] - rx[0] * f[2], rx[0] * f[1] - rx[1] * f[0]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  // Half-extent of the projected solutions, as a fraction of the panel, from distance L
+  const spread = L => {
+    const s = pts.map(p => {
+      const q = [p[0] - c[0] + f[0] * L, p[1] - c[1] + f[1] * L, p[2] - c[2] + f[2] * L];
+      const zc = dot(q, f);
+      return [dot(q, rx) / (zc * T * wh), dot(q, up) / (zc * T)];
+    });
+    const ext = k => (Math.max(...s.map(a => a[k])) - Math.min(...s.map(a => a[k]))) / 2;
+    return Math.max(ext(0), ext(1));
+  };
+  const rMin = aspect().x / kmX;
+  const Lmin = 2 * rMin / (Math.min(1, wh) * T);
+  let L = Lmin;
+  for (let it = 0; it < 4; it++) { const sp = spread(L); if (sp > 0) L *= sp / 0.5; }
+  L = Math.max(L, Lmin);
+  camera = {up: cam.up, center: {x: c[0], y: c[1], z: c[2]},
+            eye: {x: c[0] - f[0] * L, y: c[1] - f[1] * L, z: c[2] - f[2] * L}};
+  Plotly.relayout(plot, {'scene.camera': camera});
 }
 
 // Controls
