@@ -272,6 +272,8 @@ _TEMPLATE = r"""<!doctype html>
     <h2>Display</h2>
     <div class="row"><label>Vertical exaggeration</label><span id="exagv"></span></div>
     <div class="row"><input type="range" id="exag" min="1" max="20" step="0.5"></div>
+    <div class="row"><label>Other events when one is selected</label><span id="fadev"></span></div>
+    <div class="row"><input type="range" id="fade" min="0" max="0.85" step="0.01" value="0.08"></div>
 
     <h2>Selected event</h2>
     <div id="info" class="muted">Click an event. Esc or “Clear” to deselect.</div>
@@ -302,7 +304,7 @@ for (const s of STAGES) {
 }
 
 const state = {stage: 'ssst', ymin: D.years[0], ymax: D.years[1], mmin: null,
-               usable: false, sel: null, exag: D.exag, vis: []};
+               usable: false, sel: null, exag: D.exag, fade: 0.08, vis: []};
 
 const fmt  = (v, d = 2) => (v === undefined || Number.isNaN(v)) ? '—' : v.toFixed(d);
 const pidS = p => 'PYRENEES_' + String(p).padStart(6, '0');
@@ -422,7 +424,7 @@ const plot = document.getElementById('plot');
 let events = null;
 function draw(rebuild = true) {
   if (rebuild) { state.vis = visible(); events = eventTrace(); }
-  const ev = {...events, marker: {...events.marker, opacity: state.sel === null ? 0.85 : 0.08}};
+  const ev = {...events, marker: {...events.marker, opacity: state.sel === null ? 0.85 : state.fade}};
   liveCamera();
   Plotly.react(plot, [ev, ...surfaceTraces(), ...selectionTraces()], layout(),
                {responsive: true, displaylogo: false});
@@ -541,6 +543,12 @@ ymin.onchange = () => { state.ymin = +ymin.value || D.years[0]; draw(); };
 ymax.onchange = () => { state.ymax = +ymax.value || D.years[1]; draw(); };
 mmin.onchange = () => { state.mmin = mmin.value === '' ? null : +mmin.value; draw(); };
 usable.onchange = () => { state.usable = usable.checked; draw(); };
+const fade = document.getElementById('fade'), fadev = document.getElementById('fadev');
+fadev.textContent = 'opacity ' + state.fade.toFixed(2);
+fade.oninput = () => {
+  state.fade = +fade.value; fadev.textContent = 'opacity ' + state.fade.toFixed(2);
+  if (state.sel !== null) Plotly.restyle(plot, {'marker.opacity': state.fade}, [0]);
+};
 exag.oninput = () => {
   state.exag = +exag.value; exagv.textContent = '×' + state.exag;
   Plotly.relayout(plot, {'scene.aspectratio': aspect()});
