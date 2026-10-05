@@ -125,6 +125,7 @@ Shallow_Depth_DL_Catalog/
 │   ├── plot_pdf_cloud.py
 │   ├── plot_pdf_cloud_2d.py
 │   ├── ssst_evolution.py
+│   ├── seismicity_3d.py
 │   ├── ssst_corrections.py
 │   ├── temporary_network_impact.py
 │   ├── station_colocation.py
@@ -602,6 +603,7 @@ Each module can also be run standalone. Most figures are drawn at their printed 
 | `plot_pdf_cloud.py` | Interactive 3D Plotly visualization of one event's NLLoc PDF scatter-cloud across SSST iterations |
 | `plot_pdf_cloud_2d.py` | Static 2-D view of the same cloud for one iteration: map view and vertical section, with the projected confidence ellipsoid |
 | `ssst_evolution.py` | Per-zone plot of pdfVolume/EllipsoidLen3/RMS evolution across SSST iterations (convergence QC) |
+| `seismicity_3d.py` | Interactive 3-D HTML map of the seismicity before relocation, after NLL and after SSST: click an event for its metadata and its trajectory across the three stages; year, magnitude and usable filters; vertical-exaggeration slider |
 | `ssst_corrections.py` | Reconstructs and maps the SSST travel-time corrections themselves — a per-station/phase atlas (or a single page), the across-station spread, and the displacement SSST actually produced (see [below](#mapping-the-ssst-corrections--complem_figuresssst_correctionspy)) |
 | `station_colocation.py` | Diagnostic for the 20 m co-location radius of [§1](#1-station-inventory-fusion): the observed distribution of station separations against what the merge actually merged |
 
