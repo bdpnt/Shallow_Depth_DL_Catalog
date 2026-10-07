@@ -104,6 +104,7 @@ def run_pipeline():
     global_obs.apply_magnitude_models.apply_magnitude_models(parameters_magModels)
 
     # Update bulletins AOI
+    os.makedirs(os.path.join(_OBS, 'MAPS'), exist_ok=True)
     subprocess.run(
         [
             "conda", "run", "-n", "pygmt_env", "python",
