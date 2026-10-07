@@ -234,6 +234,13 @@ def merge_bulletins(csv_files, output_path, log_dir=None):
         logger.info(f"NO LOCATION {r['publicId']}  in {r['_source']} — dropped")
     all_events = all_events[~no_loc]
 
+    # A zero pdfVolume is a degenerate PDF, not a tight one — it would always win
+    # the smallest-pdfVolume dedup below.
+    zero_vol = all_events['pdfVolume'] <= 0
+    for _, r in all_events[zero_vol].iterrows():
+        logger.info(f"ZERO PDF VOLUME {r['publicId']}  in {r['_source']} — dropped")
+    all_events = all_events[~zero_vol]
+
     n_total    = len(all_events)
     logger.info(f"Total raw events   : {n_total}")
 
