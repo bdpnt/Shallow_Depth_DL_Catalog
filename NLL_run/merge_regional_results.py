@@ -226,6 +226,14 @@ def merge_bulletins(csv_files, output_path, log_dir=None):
         logger.info(f"Loaded {len(df):>5d} events from {path!r}")
 
     all_events = pd.concat(frames, ignore_index=True)
+
+    # NLLoc can write a row with no hypocentre (empty lat/lon/depth, RMS 999.99,
+    # overflowed origin time) when a location fails; it is not a solution.
+    no_loc = all_events[['latitude', 'longitude', 'depth']].isna().any(axis=1)
+    for _, r in all_events[no_loc].iterrows():
+        logger.info(f"NO LOCATION {r['publicId']}  in {r['_source']} — dropped")
+    all_events = all_events[~no_loc]
+
     n_total    = len(all_events)
     logger.info(f"Total raw events   : {n_total}")
 
