@@ -156,6 +156,7 @@ def run_pipeline():
         mag_thresh           = 1.5,  # magnitude units
     )
 
+    os.makedirs(os.path.join(_OBS, 'STATS'), exist_ok=True)
     global_obs.fuse_bulletins.fuse_bulletins(params_fusion)
     subprocess.run(
         [
