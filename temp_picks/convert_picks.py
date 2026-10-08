@@ -471,7 +471,7 @@ def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=Non
     return results
 
 
-def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None):
+def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None, instrument='?'):
     """
     Convert a single pick row from Strasbourg (RENASS/OMP) parquet format to
     GLOBAL.obs format.
@@ -485,6 +485,9 @@ def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None
     Pick uncertainty: 0.05 s for P, 0.15 s for S (matches convert_temp_rsb /
     convert_temp_omp — phase_score is a detection confidence, already
     threshold-filtered, not a timing-error estimate).
+
+    instrument is '*' for sources whose absolute timing is unreliable (short-
+    period OMP stations), so NLLoc only uses them as S-P pairs.
     """
     station_parts = row.station_id.split('.')
     if len(station_parts) < 2:
@@ -507,7 +510,8 @@ def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None
             skipped_stations[short_name] += 1
         return None
 
-    return _format_pick_line(internal_code, phase, date, hhmm, seconds_str, error_str, 'TEMP_STB')
+    return _format_pick_line(internal_code, phase, date, hhmm, seconds_str, error_str, 'TEMP_STB',
+                             instrument=instrument)
 
 
 # ---------------------------------------------------------------------------
@@ -528,7 +532,7 @@ FORMAT_HANDLERS = {
 # ---------------------------------------------------------------------------
 
 def _convert_parquet_dir(input_dir, output_path, fmt_handler, code_map,
-                          min_phase_score, skipped_stations, fallback_counter):
+                          min_phase_score, skipped_stations, fallback_counter, instrument='?'):
     """
     Read every *.parquet file under input_dir, filter by phase_score, convert
     row-by-row, and stream results straight to output_path — one parquet file
@@ -553,7 +557,7 @@ def _convert_parquet_dir(input_dir, output_path, fmt_handler, code_map,
             df = df[keep]
 
             for row in df.itertuples(index=False):
-                result = fmt_handler(row, code_map, skipped_stations, fallback_counter)
+                result = fmt_handler(row, code_map, skipped_stations, fallback_counter, instrument=instrument)
                 if result is None:
                     n_skipped += 1
                 else:
@@ -589,7 +593,8 @@ def _setup_logger(log_dir):
     return log_path
 
 
-def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=None, min_phase_score=None):
+def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=None, min_phase_score=None,
+                 relative_timing=False):
     """
     Convert a pick file to GLOBAL.obs pick line format.
 
@@ -612,6 +617,10 @@ def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=N
         Minimum phase_score required to keep a pick. Only used for formats in
         ROW_BASED_FORMATS (e.g. 'TEMP_STB'); ignored otherwise. Defaults to
         DEFAULT_MIN_PHASE_SCORE.
+    relative_timing : bool, optional
+        Write every pick with instrument '*' so NLLoc uses it only through S-P
+        differences at the same station. Only used for formats in
+        ROW_BASED_FORMATS; ignored otherwise. Default False.
 
     Returns
     -------
@@ -652,9 +661,11 @@ def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=N
     if fmt in ROW_BASED_FORMATS:
         score_threshold = min_phase_score if min_phase_score is not None else DEFAULT_MIN_PHASE_SCORE
         logger.info(f"Min phase score  : {score_threshold}")
+        logger.info(f"Relative timing  : {relative_timing}")
         n_input, n_converted, n_skipped, n_dropped_low_score = _convert_parquet_dir(
             input_path, output_path, fmt_handler, code_map,
             score_threshold, skipped_stations, fallback_counter,
+            instrument='*' if relative_timing else '?',
         )
     else:
         converted = []

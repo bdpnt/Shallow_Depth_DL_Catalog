@@ -73,6 +73,10 @@ _PICKS_TO_CONVERT = [
     (_OTHER_TXT,     'TEMP_OTH'),
 ]
 
+# Sources from short-period stations whose clocks can be off: their picks are
+# written with instrument '*' so NLLoc uses them only as S-P pairs.
+_RELATIVE_TIMING_SOURCES = {_STB_OMP_PQ}
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -121,7 +125,8 @@ def run_pipeline():
     for input_path, fmt in _PICKS_TO_CONVERT:
         output_path = _converted_output_path(input_path)
         print(f"  {os.path.basename(input_path)} ({fmt}) → {os.path.basename(output_path)}")
-        convert_file(input_path, fmt, output_path=output_path)
+        convert_file(input_path, fmt, output_path=output_path,
+                     relative_timing=input_path in _RELATIVE_TIMING_SOURCES)
 
     # Step 6 — Match picks against bulletin (chained: each run augments the previous output)
     converted_files = [

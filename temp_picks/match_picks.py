@@ -305,7 +305,7 @@ def match_picks(pick_file, bulletin_file, inventory_file, tables_file,
     -------
     dict with keys: output, log, n_picks, n_added, n_skipped_no_event,
                     n_skipped_no_station, n_skipped_no_residual,
-                    n_skipped_multi, n_skipped_duplicate
+                    n_skipped_multi, n_skipped_duplicate, n_dropped_unpaired
     """
     if output_file is None:
         base, _ = os.path.splitext(bulletin_file)
@@ -339,6 +339,8 @@ def match_picks(pick_file, bulletin_file, inventory_file, tables_file,
     n_skipped_no_res    = 0
     n_skipped_multi     = 0
     n_skipped_dup       = 0
+    n_dropped_unpaired  = 0
+    added_relative      = {}   # id(event) -> (event, [(line, station, phase)]) for added '*' picks
 
     with open(pick_file, 'r') as f:
         for raw_line in f:
@@ -411,6 +413,26 @@ def match_picks(pick_file, bulletin_file, inventory_file, tables_file,
             n_added += 1
             if dist_km_matched <= 20.0:
                 n_added_near += 1
+            if line.split()[1] == '*':
+                added_relative.setdefault(id(matched), (matched, []))[1].append(
+                    (line, station_code, phase))
+
+    # 6. A '*' pick has no absolute time: NLLoc only pairs it with another '*'
+    #    pick at the same station (S-P). Drop added ones with no such partner.
+    for event, added in added_relative.values():
+        relative_phases = {}
+        for pick in event.picks:
+            parts = pick.split()
+            if parts[1] == '*':
+                relative_phases.setdefault(parts[0], set()).add(parts[4])
+        for line, station_code, phase in added:
+            if {'P', 'S'} <= relative_phases[station_code]:
+                continue
+            event.picks.remove(line)
+            event.pick_keys.discard((station_code, phase))
+            n_added -= 1
+            n_dropped_unpaired += 1
+        event.header_line = _update_phase_count(event.header_line, len(event.picks))
 
     # --- Write output ---
     with open(output_file, 'w') as f:
@@ -433,6 +455,7 @@ def match_picks(pick_file, bulletin_file, inventory_file, tables_file,
     logger.info(f"Skipped - travel time outside theoretical band : {n_skipped_no_res}")
     logger.info(f"Skipped - ambiguous (multiple events matched)  : {n_skipped_multi}")
     logger.info(f"Skipped - duplicate station+phase in event     : {n_skipped_dup}")
+    logger.info(f"Dropped - '*' pick without S-P partner         : {n_dropped_unpaired}")
     logger.info(f"Output               : {output_file}")
 
     # Sort picks by arrival time within each event
@@ -451,6 +474,7 @@ def match_picks(pick_file, bulletin_file, inventory_file, tables_file,
         'n_skipped_no_residual': n_skipped_no_res,
         'n_skipped_multi':       n_skipped_multi,
         'n_skipped_duplicate':   n_skipped_dup,
+        'n_dropped_unpaired':    n_dropped_unpaired,
     }
 
 
