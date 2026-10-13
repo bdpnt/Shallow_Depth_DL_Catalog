@@ -95,6 +95,7 @@ def load_code_map(codemap_path):
         Keys are short station names (e.g. 'PYLU').
         Values are lists of dicts with keys:
             'internal_code' : str  — project internal code (e.g. 'RA.0012')
+            'network'       : str  — network of the canonical code (e.g. 'RA')
             'start'         : datetime or None
             'end'           : datetime or None
     """
@@ -109,6 +110,7 @@ def load_code_map(codemap_path):
         short_name = canonical_code.split('.')[-1]
         code_map.setdefault(short_name, []).append({
             'internal_code': internal_code,
+            'network':       canonical_code.split('.')[0],
             'start':         start_dt,
             'end':           end_dt,
         })
@@ -154,13 +156,16 @@ def _parse_map_date(date_str):
         return None
 
 
-def resolve_station(short_name, pick_date_str, code_map, fallback_counter=None):
+def resolve_station(short_name, pick_date_str, code_map, fallback_counter=None, network=None):
     """
     Return the project internal station code for a short station name.
 
-    Uses the pick date to select the correct entry when multiple time windows
-    exist for the same station. Falls back to the last entry if no date-matched
-    entry is found; increments fallback_counter[short_name] when provided.
+    When the source gives the pick's network, entries of that network are
+    preferred (short names are reused across deployments, e.g. YK.C015 in
+    2020 and YS.C015 in 2021); if none matches, all entries are considered.
+    The pick date then selects among the remaining entries. Falls back to the
+    last entry if no date-matched entry is found; increments
+    fallback_counter[short_name] when provided.
 
     Parameters
     ----------
@@ -173,6 +178,8 @@ def resolve_station(short_name, pick_date_str, code_map, fallback_counter=None):
     fallback_counter : Counter, optional
         If provided, incremented when the date-window match fails and the
         most-recent-entry fallback is used. Caller logs the summary.
+    network : str, optional
+        Network code of the pick (e.g. 'YK'), for formats that carry one.
 
     Returns
     -------
@@ -185,6 +192,10 @@ def resolve_station(short_name, pick_date_str, code_map, fallback_counter=None):
         entries = [e for k, v in code_map.items() if k.startswith(prefix) for e in v]
     if not entries:
         return None
+    if network:
+        same_network = [e for e in entries if e['network'] == network]
+        if same_network:
+            entries = same_network
 
     try:
         pick_dt = datetime.strptime(pick_date_str, '%Y%m%d').date()
@@ -322,6 +333,7 @@ def convert_temp_rsb(line, code_map, skipped_stations=None, fallback_counter=Non
     if len(station_parts) < 2:
         return None
     short_name = station_parts[1]
+    network    = station_parts[0]
 
     try:
         dt = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%f')
@@ -337,7 +349,7 @@ def convert_temp_rsb(line, code_map, skipped_stations=None, fallback_counter=Non
     seconds_str = f"{dt.second + dt.microsecond / 1e6:.3f}"
     error_str   = '0.05' if phase == 'P' else '0.15'
 
-    internal_code = resolve_station(short_name, date, code_map, fallback_counter)
+    internal_code = resolve_station(short_name, date, code_map, fallback_counter, network=network)
     if internal_code is None:
         if skipped_stations is not None:
             skipped_stations[short_name] += 1
@@ -372,6 +384,7 @@ def convert_temp_omp(line, code_map, skipped_stations=None, fallback_counter=Non
     if len(station_parts) < 2:
         return None
     short_name = station_parts[1]
+    network    = station_parts[0]
 
     try:
         dt = datetime.strptime(phase_time, '%Y-%m-%dT%H:%M:%S.%f')
@@ -387,7 +400,7 @@ def convert_temp_omp(line, code_map, skipped_stations=None, fallback_counter=Non
     seconds_str = f"{dt.second + dt.microsecond / 1e6:.3f}"
     error_str   = '0.05' if phase_type == 'P' else '0.15'
 
-    internal_code = resolve_station(short_name, date, code_map, fallback_counter)
+    internal_code = resolve_station(short_name, date, code_map, fallback_counter, network=network)
     if internal_code is None:
         if skipped_stations is not None:
             skipped_stations[short_name] += 1
@@ -500,6 +513,7 @@ def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None
     if len(station_parts) < 2:
         return None
     short_name = station_parts[1]
+    network    = station_parts[0]
 
     dt = row.phase_time
     if pd.isna(dt):
@@ -511,7 +525,7 @@ def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None
     seconds_str = f"{dt.second + dt.microsecond / 1e6:.3f}"
     error_str   = '0.05' if phase == 'P' else '0.15'
 
-    internal_code = resolve_station(short_name, date, code_map, fallback_counter)
+    internal_code = resolve_station(short_name, date, code_map, fallback_counter, network=network)
     if internal_code is None:
         if skipped_stations is not None:
             skipped_stations[short_name] += 1
