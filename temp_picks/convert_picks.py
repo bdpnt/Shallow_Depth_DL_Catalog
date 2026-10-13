@@ -187,19 +187,26 @@ def resolve_station(short_name, pick_date_str, code_map, fallback_counter=None):
         return None
 
     try:
-        pick_dt = datetime.strptime(pick_date_str, '%Y%m%d').replace(tzinfo=timezone.utc)
+        pick_dt = datetime.strptime(pick_date_str, '%Y%m%d').date()
     except ValueError:
         pick_dt = None
+
+    # Compare at day granularity: the pick carries only its date while epochs
+    # carry a time of day, so a datetime test rejects every pick made on an
+    # epoch's first day (e.g. YK.C015 from 2020-10-03T07:47) and sends it to
+    # the fallback below — another station when the name is reused.
+    def _day(dt):
+        return dt.date() if dt is not None else None
 
     if pick_dt is not None:
         # Priority 1: both bounds defined and pick_dt within window
         for entry in entries:
-            start, end = entry['start'], entry['end']
+            start, end = _day(entry['start']), _day(entry['end'])
             if start is not None and end is not None and start <= pick_dt <= end:
                 return entry['internal_code']
         # Priority 2: exactly one bound defined, constraint satisfied
         for entry in entries:
-            start, end = entry['start'], entry['end']
+            start, end = _day(entry['start']), _day(entry['end'])
             if (start is None) != (end is None):
                 if (start is None or pick_dt >= start) and (end is None or pick_dt <= end):
                     return entry['internal_code']
