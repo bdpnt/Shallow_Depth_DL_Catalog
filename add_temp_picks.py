@@ -52,6 +52,8 @@ _PYRENEES_TXT  = os.path.join(_PICK_FILES, 'merged_pyrenees.txt')
 _PYRENEES2_TXT = os.path.join(_PICK_FILES, 'merged_pyrenees2.txt')
 _OMP_CSV       = os.path.join(_PICK_FILES, 'merged_omp.csv')
 _OTHER_TXT     = os.path.join(_PICK_FILES, 'merged_other.txt')
+# Written by ../PhaseNet_Pamplona (`python main.py export`), prob >= 0.5.
+_PAMPLONA_OBS  = os.path.join(_PICK_FILES, 'Pamplona_PN_picks.obs')
 
 _PICKS_MARC_DIR = os.path.join(_TEMP_PICKS, 'all_picks', 'PICKS_MARC')
 _STB_OMP_PQ     = os.path.join(_PICKS_MARC_DIR, 'OMP-picks.pq')
@@ -62,6 +64,8 @@ _STB_PYROPE_PQ  = os.path.join(_PICKS_MARC_DIR, 'pyrope-renass74-bp4_40.pq')
 # TEMP_STB entries are placed after TEMP_OMP so that, if OMP-picks.pq
 # duplicates picks already ingested via merge_omp_picks.py/TEMP_OMP,
 # match_picks.py's per-event (station_code, phase) dedup silently skips them.
+# Pamplona_PN_picks comes last so it only fills (station, phase) slots that
+# no other source filled.
 _PICKS_TO_CONVERT = [
     (_VIEHLA_OBS,    'TEMP_OBS'),
     (_PYRENEES_TXT,  'TEMP_RSB'),
@@ -71,6 +75,7 @@ _PICKS_TO_CONVERT = [
     (_STB_OROGENX_PQ, 'TEMP_STB'),
     (_STB_PYROPE_PQ,  'TEMP_STB'),
     (_OTHER_TXT,     'TEMP_OTH'),
+    (_PAMPLONA_OBS,  'TEMP_RSB'),
 ]
 
 # Sources from short-period stations whose clocks can be off: their picks are
