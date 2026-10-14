@@ -430,9 +430,8 @@ def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=Non
     S-phase quality digit.
 
     P-phase quality 4 lines store an unusable placeholder time (blank or
-    "0.00") instead of a real reading; since the S offset is only meaningful
-    relative to a real P arrival, such lines are dropped entirely (mirrors
-    fetch_obs/OMP.py's handling of missing P seconds). P-phase quality 9
+    "0.00") instead of a real reading; such lines are dropped entirely, S
+    included, as fetch_obs/OMP.py drops a quality-4 P line. P-phase quality 9
     lines do carry a real timestamp but flag it as absolute-time-unreliable;
     these are kept, with instrument '*' instead of '?' on both the P and S
     lines, so NLLoc uses S-P relative timing instead of the absolute pick
@@ -458,7 +457,7 @@ def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=Non
     ss_str   = datefield[10:12].strip()
     frac_str = datefield[13:15].strip()
     if not ss_str or not frac_str:
-        return None  # P time unusable -> S offset can't be resolved either
+        return None  # P time unusable -> the line is dropped, S included
 
     year = 2000 + yy if yy < 78 else 1900 + yy
     p_dt = datetime(year, mm, dd, hh, mi, int(ss_str)) + timedelta(microseconds=int(frac_str) * 10000)
@@ -470,12 +469,14 @@ def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=Non
         return None
 
     results = []
-    marker  = '*' if quality_p == 9 else '?'
-    if quality_p < 4 or quality_p == 9:
-        err_p = '0.05' if quality_p == 9 else ('0.10' if quality_p > 1 else '0.05')
-        results.append(_format_pick_line(
-            internal_code, 'P', p_dt.strftime('%Y%m%d'), p_dt.strftime('%H%M'),
-            f"{p_dt.second + p_dt.microsecond / 1e6:.3f}", err_p, 'TEMP_OTH', instrument=marker))
+    if 4 <= quality_p < 9:
+        return results
+
+    marker = '*' if quality_p == 9 else '?'
+    err_p  = '0.05' if quality_p == 9 else ('0.10' if quality_p > 1 else '0.05')
+    results.append(_format_pick_line(
+        internal_code, 'P', p_dt.strftime('%Y%m%d'), p_dt.strftime('%H%M'),
+        f"{p_dt.second + p_dt.microsecond / 1e6:.3f}", err_p, 'TEMP_OTH', instrument=marker))
 
     if rest.strip():
         m2 = _TEMP_OTH_S_RE.match(rest)
