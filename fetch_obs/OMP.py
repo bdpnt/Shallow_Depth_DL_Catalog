@@ -222,7 +222,7 @@ def write_catalog_to_obs(parameters, log_dir=None):
 
                 second_p = float(second_p)
                 if second_p < 0:
-                    minute_p  = minute - 1
+                    minute_p -= 1
                     second_p += 60
 
                 arrival_p  = event_date + datetime.timedelta(seconds=hour_p * 3600 + minute_p * 60 + second_p)
@@ -258,7 +258,7 @@ def write_catalog_to_obs(parameters, log_dir=None):
 
                 second_s = float(second_s)
                 if second_s < 0:
-                    minute_s  = minute - 1
+                    minute_s -= 1
                     second_s += 60
 
                 arrival_s = event_date + datetime.timedelta(seconds=hour_s * 3600 + minute_s * 60 + second_s)
