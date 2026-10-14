@@ -340,7 +340,7 @@ def match_picks(pick_file, bulletin_file, inventory_file, tables_file,
     n_skipped_multi     = 0
     n_skipped_dup       = 0
     n_dropped_unpaired  = 0
-    added_relative      = {}   # id(event) -> (event, [(line, station, phase)]) for added '*' picks
+    added_relative      = {}   # id(event) -> (event, [(line, station, phase, dist_km)]) for added '*' picks
 
     with open(pick_file, 'r') as f:
         for raw_line in f:
@@ -415,7 +415,7 @@ def match_picks(pick_file, bulletin_file, inventory_file, tables_file,
                 n_added_near += 1
             if line.split()[1] == '*':
                 added_relative.setdefault(id(matched), (matched, []))[1].append(
-                    (line, station_code, phase))
+                    (line, station_code, phase, dist_km_matched))
 
     # 6. A '*' pick has no absolute time: NLLoc only pairs it with another '*'
     #    pick at the same station (S-P). Drop added ones with no such partner.
@@ -425,12 +425,14 @@ def match_picks(pick_file, bulletin_file, inventory_file, tables_file,
             parts = pick.split()
             if parts[1] == '*':
                 relative_phases.setdefault(parts[0], set()).add(parts[4])
-        for line, station_code, phase in added:
+        for line, station_code, phase, dist_km in added:
             if {'P', 'S'} <= relative_phases[station_code]:
                 continue
             event.picks.remove(line)
             event.pick_keys.discard((station_code, phase))
             n_added -= 1
+            if dist_km <= 20.0:
+                n_added_near -= 1
             n_dropped_unpaired += 1
         event.header_line = _update_phase_count(event.header_line, len(event.picks))
 
