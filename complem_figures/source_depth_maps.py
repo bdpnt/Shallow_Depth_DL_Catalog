@@ -1,6 +1,6 @@
 """
-source_depth_maps_report.py
-===========================
+source_depth_maps.py
+====================
 Report figure: two source bulletins side by side (IGN left, LDG right by
 default), every event coloured by depth and sized by magnitude, so the depth
 distributions of the two catalogues can be compared on the same map.
@@ -23,10 +23,10 @@ basemap, `viridis` reversed 0-15 km, `0.03 cm x Mag` symbols), with:
 
 Usage
 -----
-    conda run -n pygmt_env python complem_figures/source_depth_maps_report.py \\
+    conda run -n pygmt_env python complem_figures/source_depth_maps.py \\
         --left   obs/IGN_20-25.obs \\
         --right  obs/LDG_20-25.obs \\
-        --output complem_figures/source_depth_maps/IGN_LDG_report.png
+        --output complem_figures/source_depth_maps/IGN_LDG.png
 """
 
 import argparse
@@ -176,7 +176,7 @@ def generate_figure(parameters):
         MAP_LABEL_OFFSET='3p',
     )
 
-    cpt = os.path.join(_PROJECT_ROOT, '.source_depth_maps_report.cpt')
+    cpt = os.path.join(_PROJECT_ROOT, '.source_depth_maps.cpt')
     pg.makecpt(cmap='viridis', series=[0, parameters.max_depth, 1], reverse=True, output=cpt)
 
     fig = pg.Figure()
@@ -232,7 +232,7 @@ def main():
                         help='Left bulletin: a .obs, or archive.zip::member (default: obs/IGN_20-25.obs)')
     parser.add_argument('--right', default='obs/LDG_20-25.obs',
                         help='Right bulletin (default: obs/LDG_20-25.obs)')
-    parser.add_argument('--output', default='complem_figures/source_depth_maps/IGN_LDG_report.png',
+    parser.add_argument('--output', default='complem_figures/source_depth_maps/IGN_LDG.png',
                         help='Output path; both .png and .pdf are written')
     parser.add_argument('--left-tag',  default='a', help='Top-left tag of the left map ("" for none)')
     parser.add_argument('--right-tag', default='b', help='Top-left tag of the right map ("" for none)')

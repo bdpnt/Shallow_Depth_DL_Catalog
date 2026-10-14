@@ -728,7 +728,7 @@ def write_quakeml(parameters, log_dir=None):
     epochs = load_station_epochs(parameters.file_inventory)
     logger.info(f"Station codes in inventory : {len(epochs)}")
     for code in _ambiguous_codes(epochs):
-        chosen, *rest = (f'{net}.{sta}' for net, sta, _, _ in epochs[code])
+        chosen, *rest = (f'{net}.{sta}' for net, sta, _, _, _ in epochs[code])
         logger.warning(f"Ambiguous station code {code}: {chosen} used "
                        f"over {', '.join(rest)} (dates do not separate them)")
 

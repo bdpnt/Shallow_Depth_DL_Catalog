@@ -42,10 +42,23 @@ _STATIONS   = os.path.join(_PROJECT_ROOT, 'stations')
 
 def run_pipeline():
     """Run the full catalog harmonization and fusion pipeline."""
+    # The six source bulletins, named rather than globbed so that later-stage
+    # outputs sitting in obs/ (GLOBAL*, NLL_result*, SSST_result) are never
+    # remapped or fused. The order is the fusion order: a merged event keeps
+    # the first location, so RESIF leads and ICGC precedes IGN as before.
+    _source_catalogs = [
+        os.path.join(_OBS, 'RESIF_20-25.obs'),
+        os.path.join(_OBS, 'ICGC_20-25.obs'),
+        os.path.join(_OBS, 'IGN_20-25.obs'),
+        os.path.join(_OBS, 'LDG_20-25.obs'),
+        os.path.join(_OBS, 'OMP_2016.obs'),
+        os.path.join(_OBS, 'OMP_78-19.obs'),
+    ]
+
     # Associate picks
     params_association = AssociatePicksParams(
         file_inventory  = os.path.join(_STATIONS, 'GLOBAL_inventory.xml'),
-        folder_bulletin = os.path.join(_OBS, '*.obs'),
+        files           = _source_catalogs,
     )
 
     global_obs.remap_picks_to_unified_codes.remap_picks_to_unified_codes(params_association)
@@ -104,6 +117,7 @@ def run_pipeline():
     global_obs.apply_magnitude_models.apply_magnitude_models(parameters_magModels)
 
     # Update bulletins AOI
+    os.makedirs(os.path.join(_OBS, 'MAPS'), exist_ok=True)
     subprocess.run(
         [
             "conda", "run", "-n", "pygmt_env", "python",
@@ -127,14 +141,6 @@ def run_pipeline():
     )
 
     # Dedup each source catalog before fusion
-    _source_catalogs = [
-        os.path.join(_OBS, 'RESIF_20-25.obs'),
-        os.path.join(_OBS, 'IGN_20-25.obs'),
-        os.path.join(_OBS, 'ICGC_20-25.obs'),
-        os.path.join(_OBS, 'LDG_20-25.obs'),
-        os.path.join(_OBS, 'OMP_2016.obs'),
-        os.path.join(_OBS, 'OMP_78-19.obs'),
-    ]
     for _catalog_path in _source_catalogs:
         params_dedup = MergeDoublesParams(
             global_bulletin_path = _catalog_path,
@@ -147,7 +153,7 @@ def run_pipeline():
     params_fusion = FusionParams(
         global_bulletin_path = os.path.join(_OBS, 'GLOBAL.obs'),
         main_bulletin_path   = os.path.join(_OBS, 'RESIF_20-25.obs'),
-        folder_path          = os.path.join(_OBS, '*.obs'),
+        files                = _source_catalogs,
         dist_thresh          = 15,   # km
         loose_dist_thresh    = 50,   # km
         time_thresh          = 2,    # seconds
@@ -155,6 +161,7 @@ def run_pipeline():
         mag_thresh           = 1.5,  # magnitude units
     )
 
+    os.makedirs(os.path.join(_OBS, 'STATS'), exist_ok=True)
     global_obs.fuse_bulletins.fuse_bulletins(params_fusion)
     subprocess.run(
         [

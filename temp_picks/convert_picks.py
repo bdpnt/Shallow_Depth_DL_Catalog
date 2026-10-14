@@ -95,6 +95,7 @@ def load_code_map(codemap_path):
         Keys are short station names (e.g. 'PYLU').
         Values are lists of dicts with keys:
             'internal_code' : str  — project internal code (e.g. 'RA.0012')
+            'network'       : str  — network of the canonical code (e.g. 'RA')
             'start'         : datetime or None
             'end'           : datetime or None
     """
@@ -109,6 +110,7 @@ def load_code_map(codemap_path):
         short_name = canonical_code.split('.')[-1]
         code_map.setdefault(short_name, []).append({
             'internal_code': internal_code,
+            'network':       canonical_code.split('.')[0],
             'start':         start_dt,
             'end':           end_dt,
         })
@@ -154,13 +156,16 @@ def _parse_map_date(date_str):
         return None
 
 
-def resolve_station(short_name, pick_date_str, code_map, fallback_counter=None):
+def resolve_station(short_name, pick_date_str, code_map, fallback_counter=None, network=None):
     """
     Return the project internal station code for a short station name.
 
-    Uses the pick date to select the correct entry when multiple time windows
-    exist for the same station. Falls back to the last entry if no date-matched
-    entry is found; increments fallback_counter[short_name] when provided.
+    When the source gives the pick's network, entries of that network are
+    preferred (short names are reused across deployments, e.g. YK.C015 in
+    2020 and YS.C015 in 2021); if none matches, all entries are considered.
+    The pick date then selects among the remaining entries. Falls back to the
+    last entry if no date-matched entry is found; increments
+    fallback_counter[short_name] when provided.
 
     Parameters
     ----------
@@ -173,6 +178,8 @@ def resolve_station(short_name, pick_date_str, code_map, fallback_counter=None):
     fallback_counter : Counter, optional
         If provided, incremented when the date-window match fails and the
         most-recent-entry fallback is used. Caller logs the summary.
+    network : str, optional
+        Network code of the pick (e.g. 'YK'), for formats that carry one.
 
     Returns
     -------
@@ -185,21 +192,32 @@ def resolve_station(short_name, pick_date_str, code_map, fallback_counter=None):
         entries = [e for k, v in code_map.items() if k.startswith(prefix) for e in v]
     if not entries:
         return None
+    if network:
+        same_network = [e for e in entries if e['network'] == network]
+        if same_network:
+            entries = same_network
 
     try:
-        pick_dt = datetime.strptime(pick_date_str, '%Y%m%d').replace(tzinfo=timezone.utc)
+        pick_dt = datetime.strptime(pick_date_str, '%Y%m%d').date()
     except ValueError:
         pick_dt = None
+
+    # Compare at day granularity: the pick carries only its date while epochs
+    # carry a time of day, so a datetime test rejects every pick made on an
+    # epoch's first day (e.g. YK.C015 from 2020-10-03T07:47) and sends it to
+    # the fallback below — another station when the name is reused.
+    def _day(dt):
+        return dt.date() if dt is not None else None
 
     if pick_dt is not None:
         # Priority 1: both bounds defined and pick_dt within window
         for entry in entries:
-            start, end = entry['start'], entry['end']
+            start, end = _day(entry['start']), _day(entry['end'])
             if start is not None and end is not None and start <= pick_dt <= end:
                 return entry['internal_code']
         # Priority 2: exactly one bound defined, constraint satisfied
         for entry in entries:
-            start, end = entry['start'], entry['end']
+            start, end = _day(entry['start']), _day(entry['end'])
             if (start is None) != (end is None):
                 if (start is None or pick_dt >= start) and (end is None or pick_dt <= end):
                     return entry['internal_code']
@@ -315,6 +333,7 @@ def convert_temp_rsb(line, code_map, skipped_stations=None, fallback_counter=Non
     if len(station_parts) < 2:
         return None
     short_name = station_parts[1]
+    network    = station_parts[0]
 
     try:
         dt = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%f')
@@ -330,7 +349,7 @@ def convert_temp_rsb(line, code_map, skipped_stations=None, fallback_counter=Non
     seconds_str = f"{dt.second + dt.microsecond / 1e6:.3f}"
     error_str   = '0.05' if phase == 'P' else '0.15'
 
-    internal_code = resolve_station(short_name, date, code_map, fallback_counter)
+    internal_code = resolve_station(short_name, date, code_map, fallback_counter, network=network)
     if internal_code is None:
         if skipped_stations is not None:
             skipped_stations[short_name] += 1
@@ -365,6 +384,7 @@ def convert_temp_omp(line, code_map, skipped_stations=None, fallback_counter=Non
     if len(station_parts) < 2:
         return None
     short_name = station_parts[1]
+    network    = station_parts[0]
 
     try:
         dt = datetime.strptime(phase_time, '%Y-%m-%dT%H:%M:%S.%f')
@@ -380,7 +400,7 @@ def convert_temp_omp(line, code_map, skipped_stations=None, fallback_counter=Non
     seconds_str = f"{dt.second + dt.microsecond / 1e6:.3f}"
     error_str   = '0.05' if phase_type == 'P' else '0.15'
 
-    internal_code = resolve_station(short_name, date, code_map, fallback_counter)
+    internal_code = resolve_station(short_name, date, code_map, fallback_counter, network=network)
     if internal_code is None:
         if skipped_stations is not None:
             skipped_stations[short_name] += 1
@@ -389,29 +409,33 @@ def convert_temp_omp(line, code_map, skipped_stations=None, fallback_counter=Non
     return _format_pick_line(internal_code, phase_type, date, hhmm, seconds_str, error_str, 'TEMP_OMP')
 
 
-_TEMP_OTH_RE   = re.compile(r'^(.{5})P (\d) (.{15})(.*)$')
-_TEMP_OTH_S_RE = re.compile(r'^\s*(\S+)\s+S\s+(\d)\s*$')
+# 'STA  P 3 ' (reduced) or 'STA   EPU3 ' (full HYPO71: onset, P, polarity, weight)
+_TEMP_OTH_RE   = re.compile(r'^(.{5})(?:P | [IE ]P.)(\d) (.{15})(.*)$')
+_TEMP_OTH_S_RE = re.compile(r'^\s*(\S+)\s+S\s+(\d)(?:\s|$)')
 
 
 def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=None):
     """
     Convert a single pick line from TEMP_OTH format to GLOBAL.obs format(s).
 
-    TEMP_OTH source format (fixed-width, no delimiters):
-        STATION(5) "P X "(4) YYMMDDHHMMSS.SS(15) [S_OFFSET " S " QUALITY]
+    TEMP_OTH source format (HYPO71 phase cards, fixed-width, no delimiters):
+        STATION(5) "P X "(4) YYMMDDHHMMSS.SS(15) [S_SECONDS " S " QUALITY] [...]
+        STATION(5) " EPUX "(6) YYMMDDHHMMSS.SS(15) [S_SECONDS " S " QUALITY] [...]
 
-    Station is a 5-char space-padded short name. "P X " holds the P-phase
-    quality digit (0-9; >=4 means unusable, per project convention). The
-    15-char date/time field packs YY MM DD HH MI SS.SS as six 2-char
-    sub-fields, each right-justified with a space instead of a leading zero
-    (e.g. " 6" means 06). The optional trailing part gives the S arrival as
-    an offset in seconds after the P arrival, followed by " S " and the
-    S-phase quality digit.
+    Station is a 5-char space-padded short name. The phase block is either
+    the reduced "P X " or the full HYPO71 " EPUX " (onset I/E, P, polarity,
+    weight); X is the P-phase quality digit (0-9; >=4 means unusable, per
+    project convention). The 15-char date/time field packs YY MM DD HH MI
+    SS.SS as six 2-char sub-fields, each right-justified with a space
+    instead of a leading zero (e.g. " 6" means 06). The optional trailing
+    part gives the S arrival followed by " S " and the S-phase quality
+    digit; anything after it is ignored. Both the P and the S seconds count
+    from the card's HH:MM and may exceed 60 (the HYPO71 convention), so a
+    pick falling in the next minute keeps the card's minute.
 
     P-phase quality 4 lines store an unusable placeholder time (blank or
-    "0.00") instead of a real reading; since the S offset is only meaningful
-    relative to a real P arrival, such lines are dropped entirely (mirrors
-    fetch_obs/OMP.py's handling of missing P seconds). P-phase quality 9
+    "0.00") instead of a real reading; such lines are dropped entirely, S
+    included, as fetch_obs/OMP.py drops a quality-4 P line. P-phase quality 9
     lines do carry a real timestamp but flag it as absolute-time-unreliable;
     these are kept, with instrument '*' instead of '?' on both the P and S
     lines, so NLLoc uses S-P relative timing instead of the absolute pick
@@ -437,10 +461,11 @@ def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=Non
     ss_str   = datefield[10:12].strip()
     frac_str = datefield[13:15].strip()
     if not ss_str or not frac_str:
-        return None  # P time unusable -> S offset can't be resolved either
+        return None  # P time unusable -> the line is dropped, S included
 
-    year = 2000 + yy if yy < 78 else 1900 + yy
-    p_dt = datetime(year, mm, dd, hh, mi, int(ss_str)) + timedelta(microseconds=int(frac_str) * 10000)
+    year        = 2000 + yy if yy < 78 else 1900 + yy
+    card_minute = datetime(year, mm, dd, hh, mi)
+    p_dt        = card_minute + timedelta(seconds=int(ss_str), microseconds=int(frac_str) * 10000)
 
     internal_code = resolve_station(short_name, p_dt.strftime('%Y%m%d'), code_map, fallback_counter)
     if internal_code is None:
@@ -449,20 +474,22 @@ def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=Non
         return None
 
     results = []
-    marker  = '*' if quality_p == 9 else '?'
-    if quality_p < 4 or quality_p == 9:
-        err_p = '0.05' if quality_p == 9 else ('0.10' if quality_p > 1 else '0.05')
-        results.append(_format_pick_line(
-            internal_code, 'P', p_dt.strftime('%Y%m%d'), p_dt.strftime('%H%M'),
-            f"{p_dt.second + p_dt.microsecond / 1e6:.3f}", err_p, 'TEMP_OTH', instrument=marker))
+    if 4 <= quality_p < 9:
+        return results
+
+    marker = '*' if quality_p == 9 else '?'
+    err_p  = '0.05' if quality_p == 9 else ('0.10' if quality_p > 1 else '0.05')
+    results.append(_format_pick_line(
+        internal_code, 'P', p_dt.strftime('%Y%m%d'), p_dt.strftime('%H%M'),
+        f"{p_dt.second + p_dt.microsecond / 1e6:.3f}", err_p, 'TEMP_OTH', instrument=marker))
 
     if rest.strip():
         m2 = _TEMP_OTH_S_RE.match(rest)
         if m2:
-            offset_str, quality_s_str = m2.groups()
+            s_sec_str, quality_s_str = m2.groups()
             quality_s = int(quality_s_str)
             if quality_s < 4:
-                s_dt  = p_dt + timedelta(seconds=float(offset_str))
+                s_dt  = card_minute + timedelta(seconds=float(s_sec_str))
                 err_s = '0.30' if quality_s > 2 else '0.15'
                 results.append(_format_pick_line(
                     internal_code, 'S', s_dt.strftime('%Y%m%d'), s_dt.strftime('%H%M'),
@@ -471,7 +498,7 @@ def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=Non
     return results
 
 
-def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None):
+def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None, instrument='?'):
     """
     Convert a single pick row from Strasbourg (RENASS/OMP) parquet format to
     GLOBAL.obs format.
@@ -485,11 +512,15 @@ def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None
     Pick uncertainty: 0.05 s for P, 0.15 s for S (matches convert_temp_rsb /
     convert_temp_omp — phase_score is a detection confidence, already
     threshold-filtered, not a timing-error estimate).
+
+    instrument is '*' for sources whose absolute timing is unreliable (short-
+    period OMP stations), so NLLoc only uses them as S-P pairs.
     """
     station_parts = row.station_id.split('.')
     if len(station_parts) < 2:
         return None
     short_name = station_parts[1]
+    network    = station_parts[0]
 
     dt = row.phase_time
     if pd.isna(dt):
@@ -501,13 +532,14 @@ def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None
     seconds_str = f"{dt.second + dt.microsecond / 1e6:.3f}"
     error_str   = '0.05' if phase == 'P' else '0.15'
 
-    internal_code = resolve_station(short_name, date, code_map, fallback_counter)
+    internal_code = resolve_station(short_name, date, code_map, fallback_counter, network=network)
     if internal_code is None:
         if skipped_stations is not None:
             skipped_stations[short_name] += 1
         return None
 
-    return _format_pick_line(internal_code, phase, date, hhmm, seconds_str, error_str, 'TEMP_STB')
+    return _format_pick_line(internal_code, phase, date, hhmm, seconds_str, error_str, 'TEMP_STB',
+                             instrument=instrument)
 
 
 # ---------------------------------------------------------------------------
@@ -528,7 +560,7 @@ FORMAT_HANDLERS = {
 # ---------------------------------------------------------------------------
 
 def _convert_parquet_dir(input_dir, output_path, fmt_handler, code_map,
-                          min_phase_score, skipped_stations, fallback_counter):
+                          min_phase_score, skipped_stations, fallback_counter, instrument='?'):
     """
     Read every *.parquet file under input_dir, filter by phase_score, convert
     row-by-row, and stream results straight to output_path — one parquet file
@@ -553,7 +585,7 @@ def _convert_parquet_dir(input_dir, output_path, fmt_handler, code_map,
             df = df[keep]
 
             for row in df.itertuples(index=False):
-                result = fmt_handler(row, code_map, skipped_stations, fallback_counter)
+                result = fmt_handler(row, code_map, skipped_stations, fallback_counter, instrument=instrument)
                 if result is None:
                     n_skipped += 1
                 else:
@@ -589,7 +621,8 @@ def _setup_logger(log_dir):
     return log_path
 
 
-def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=None, min_phase_score=None):
+def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=None, min_phase_score=None,
+                 relative_timing=False):
     """
     Convert a pick file to GLOBAL.obs pick line format.
 
@@ -612,6 +645,10 @@ def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=N
         Minimum phase_score required to keep a pick. Only used for formats in
         ROW_BASED_FORMATS (e.g. 'TEMP_STB'); ignored otherwise. Defaults to
         DEFAULT_MIN_PHASE_SCORE.
+    relative_timing : bool, optional
+        Write every pick with instrument '*' so NLLoc uses it only through S-P
+        differences at the same station. Only used for formats in
+        ROW_BASED_FORMATS; ignored otherwise. Default False.
 
     Returns
     -------
@@ -652,9 +689,11 @@ def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=N
     if fmt in ROW_BASED_FORMATS:
         score_threshold = min_phase_score if min_phase_score is not None else DEFAULT_MIN_PHASE_SCORE
         logger.info(f"Min phase score  : {score_threshold}")
+        logger.info(f"Relative timing  : {relative_timing}")
         n_input, n_converted, n_skipped, n_dropped_low_score = _convert_parquet_dir(
             input_path, output_path, fmt_handler, code_map,
             score_threshold, skipped_stations, fallback_counter,
+            instrument='*' if relative_timing else '?',
         )
     else:
         converted = []

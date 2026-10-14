@@ -1,13 +1,13 @@
 """
-cross_section_report.py
+cross_section_panels.py
 =======================
-Report-ready version of `cross_section.py --no-map`: three depth sections along
-the same profile side by side — by default the Maladeta/Aneto profile before
+Several depth sections along one profile, side by side (`cross_section.py
+--no-map` draws one) — by default the Maladeta/Aneto profile before
 relocation (a, flat colour), after NonLinLoc (b) and after NonLinLoc-SSST (c),
 the last two coloured by ErV.
 
-Differences from `cross_section.py`
------------------------------------
+Layout
+------
 * The three panels are one figure, drawn at its printed size (`--width-cm`,
   default 16 cm = `\\linewidth` of an A4 page with 2.5 cm margins) with 7-8 pt
   fonts, so LaTeX includes it at scale 1 and the text stays legible.
@@ -19,53 +19,56 @@ Differences from `cross_section.py`
   panel is 10 cm wide), so the sections look as dense as before.
 * Catalogue reading (formats 4, 5 and 6), the quality filter, the swath selection
   by `pygmt.project`, the draw order and the clipping to the colour range are
-  copied from `cross_section.py` unchanged. Events kept per panel are printed:
-  state them in the caption.
+  those of `cross_section.py`. Format 6 reads the PDF expectation by default;
+  `--solution maxlike` reads the maximum-likelihood hypocentre (see
+  `event_maps.hypocentre_columns`). Events kept per panel are printed: state
+  them in the caption.
 * Writes both a 300 dpi PNG and a vector PDF.
 
 Usage
 -----
-    conda run -n pygmt_env python complem_figures/cross_section_report.py
+    conda run -n pygmt_env python complem_figures/cross_section_panels.py
 
     # other panels / profile: --panel CATALOG FORMAT METRIC, repeatable (METRIC 'none' = flat colour)
-    conda run -n pygmt_env python complem_figures/cross_section_report.py \\
+    conda run -n pygmt_env python complem_figures/cross_section_panels.py \\
         --panel obs/GLOBAL.obs 4 none \\
         --panel RESULT/NLL_result.csv 6 erv \\
         --panel RESULT/SSST_result.csv 6 erv \\
         --lon0 0.6852 --lat0 42.6 --azimut 44 --length 12 --width 3 --depth-max 12 \\
-        --output complem_figures/cross_section/Aneto_report.png
+        --output complem_figures/cross_section/Aneto.png
 
     # Arette (Chaînons Béarnais): before relocation, NonLinLoc-SSST, Chevrot et al. (2024)
-    conda run -n pygmt_env python complem_figures/cross_section_report.py \\
+    conda run -n pygmt_env python complem_figures/cross_section_panels.py \\
         --panel obs/GLOBAL.obs 4 none \\
         --panel RESULT/SSST_result.csv 6 erv \\
         --panel complem_figures/cross_section/catalogue_arette_3D_Chevrot.csv 5 none \\
         --lon0 -0.6275 --lat0 43.0 --azimut 0 --length 16 --width 8 --depth-max 18 \\
-        --tag-position BL --output complem_figures/cross_section/Arette_report.png
+        --tag-position BL --output complem_figures/cross_section/Arette.png
 
     # Andorra: before relocation, NonLinLoc, NonLinLoc-SSST (default panels)
-    conda run -n pygmt_env python complem_figures/cross_section_report.py \\
+    conda run -n pygmt_env python complem_figures/cross_section_panels.py \\
         --lon0 1.4 --lat0 42.48 --azimut 32 --length 10 --width 3 --depth-max 15 \\
-        --output complem_figures/cross_section/Andorra_report.png
+        --output complem_figures/cross_section/Andorra.png
 """
 
 import argparse
 import os
+import sys
 import tempfile
 from dataclasses import dataclass, field
-from math import cos, radians, sin
 from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
 import pygmt
 
-# ---------------------------------------------------------------------------
-# Module paths
-# ---------------------------------------------------------------------------
-
 _MODULE_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
+
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+from complem_figures.cross_section import _dest_point  # noqa: E402
+from complem_figures.event_maps import hypocentre_columns  # noqa: E402
 
 _FLAT_FILL        = '#DF2B2B'   # cross_section.py, formats 4 and 5
 _ORIG_PANEL_W     = 10.0        # cm, cross_section.py panel width
@@ -84,9 +87,9 @@ DEFAULT_PANELS = [
 # ---------------------------------------------------------------------------
 
 @dataclass
-class CrossSectionReportParams:
+class CrossSectionPanelsParams:
     panels:       List[Tuple[str, int, str]] = field(default_factory=lambda: list(DEFAULT_PANELS))
-    save_file:    str   = 'complem_figures/cross_section/Aneto_report.png'
+    save_file:    str   = 'complem_figures/cross_section/Aneto.png'
     lon0:         float = 0.6852      # Aneto profile of the report
     lat0:         float = 42.6
     azimut:       float = 44.0
@@ -99,20 +102,12 @@ class CrossSectionReportParams:
     size_factor:  float = 1.0
     tags:         str   = 'abc'
     tag_position: str   = 'TR'     # GMT justification code of the tag corner
+    solution:     str   = 'expect'   # format 6: 'expect' | 'maxlike'
 
 
 # ---------------------------------------------------------------------------
-# Helpers — copied from cross_section.py
+# Helpers
 # ---------------------------------------------------------------------------
-
-def _dest_point(lon, lat, azimut, dist_km):
-    """Flat-Earth destination point (1 deg = 111 km), as cross_section.py."""
-    R    = 111.0
-    az   = radians(azimut)
-    dlat = (dist_km * cos(az)) / R
-    dlon = (dist_km * sin(az)) / (R * cos(radians(lat)))
-    return lon + dlon, lat + dlat
-
 
 def _metric_style(name, uncert_h, uncert_v):
     """cross_section._metric_style restricted to the error metrics."""
@@ -125,13 +120,14 @@ def _metric_style(name, uncert_h, uncert_v):
     raise ValueError(f'unsupported metric {name!r} (erv, erh or none)')
 
 
-def _read_catalog(path, fmt, uncert_h, uncert_v):
+def _read_catalog(path, fmt, uncert_h, uncert_v, solution='expect'):
     """Formats 4 (.obs), 5 (Chevrot CSV) and 6 (RESULT/*.csv) of cross_section.py, then its quality filter."""
     if fmt == 6:
         df    = pd.read_csv(path)
-        lon   = df['longitude'].to_numpy()
-        lat   = df['latitude'].to_numpy()
-        depth = df['depth'].to_numpy()
+        lat_col, lon_col, depth_col = hypocentre_columns(df, solution)
+        lon   = df[lon_col].to_numpy()
+        lat   = df[lat_col].to_numpy()
+        depth = df[depth_col].to_numpy()
         erh   = df['true_erh'].to_numpy()
         erv   = df['true_erz'].to_numpy()
         rms   = df['RMS'].to_numpy()
@@ -214,7 +210,7 @@ def generate_figure(parameters):
 
             lon, lat, depth, metrics = _read_catalog(
                 os.path.join(_PROJECT_ROOT, path) if not os.path.isabs(path) else path,
-                fmt, parameters.uncert_h, parameters.uncert_v)
+                fmt, parameters.uncert_h, parameters.uncert_v, parameters.solution)
             cvals = metrics[metric] if metric != 'none' else np.zeros_like(depth)
             data  = _project(lon, lat, depth, cvals, p0, p1, parameters.half_width, workdir)
             counts.append(len(data))
@@ -276,13 +272,13 @@ def generate_figure(parameters):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Report-ready side-by-side depth sections (default: Aneto, before / NLL / NLL-SSST).')
+        description='Side-by-side depth sections along one profile (default: Aneto, before / NLL / NLL-SSST).')
     parser.add_argument('--panel', action='append', nargs=3,
                         metavar=('CATALOG', 'FORMAT', 'METRIC'), default=None,
                         help="repeatable; FORMAT 4 (.obs), 5 (Chevrot CSV) or 6 (RESULT/*.csv); "
                              "METRIC erv, erh or none (flat colour). Default: "
                              "GLOBAL.obs 4 none, NLL_result.csv 6 erv, SSST_result.csv 6 erv")
-    parser.add_argument('--output', default='complem_figures/cross_section/Aneto_report.png',
+    parser.add_argument('--output', default='complem_figures/cross_section/Aneto.png',
                         help='both .png and .pdf are written (default: %(default)s)')
     parser.add_argument('--lon0',      type=float, default=0.6852)
     parser.add_argument('--lat0',      type=float, default=42.6)
@@ -298,19 +294,22 @@ def main():
                         help='printed width, i.e. your \\linewidth in cm (default: 16)')
     parser.add_argument('--size-factor', type=float, default=1.0,
                         help='extra multiplier on symbol size (default: 1)')
+    parser.add_argument('--solution', default='expect', choices=['expect', 'maxlike'],
+                        help='Hypocentre read from a format-6 CSV: PDF expectation (default) '
+                             'or maximum likelihood')
     parser.add_argument('--tags', default='abc', help='panel tags, one character each ("" for none)')
     parser.add_argument('--tag-position', default='TR', choices=['TL', 'TR', 'BL', 'BR'],
                         help='panel corner holding the tag (default: TR)')
     args = parser.parse_args()
 
     panels = ([(c, int(f), m) for c, f, m in args.panel] if args.panel else list(DEFAULT_PANELS))
-    generate_figure(CrossSectionReportParams(
+    generate_figure(CrossSectionPanelsParams(
         panels=panels, save_file=args.output,
         lon0=args.lon0, lat0=args.lat0, azimut=args.azimut, length=args.length,
         half_width=args.width, depth_max=args.depth_max,
         uncert_h=args.uncert_h, uncert_v=args.uncert_v,
         width_cm=args.width_cm, size_factor=args.size_factor, tags=args.tags,
-        tag_position=args.tag_position,
+        tag_position=args.tag_position, solution=args.solution,
     ))
 
 

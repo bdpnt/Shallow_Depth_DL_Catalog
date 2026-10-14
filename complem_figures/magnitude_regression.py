@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-magnitude_regression_report.py
-==============================
+magnitude_regression.py
+=======================
 Report-quality version of the magnitude-conversion figure produced by
 `global_obs/generate_magnitude_models.py`.
 

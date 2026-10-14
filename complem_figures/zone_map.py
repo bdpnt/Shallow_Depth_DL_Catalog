@@ -99,7 +99,8 @@ def _load_zones(loc_dir):
     return zones
 
 
-_ZONES = _load_zones(os.path.join(_PROJECT_ROOT, 'loc'))
+_LOC_DIR = os.path.join(_PROJECT_ROOT, 'run', 'nll_loc')
+_ZONES   = _load_zones(_LOC_DIR)
 
 _ZONE_COLORS = [
     "#8c510a", "#d8b365", "#f6e8c3", "#c7eae5", "#5ab4ac", "#01665e"
@@ -157,6 +158,10 @@ def generate_figure(parameters):
     -------
     dict with keys: output
     """
+    if not _ZONES:
+        raise FileNotFoundError(f"No zone control file under {_LOC_DIR}/GLOBAL_*/last.in "
+                                f"(written by NLLoc) - run run_NLL.py first.")
+
     region = parameters.map_region if parameters.map_region else [-5.0, 6.0, 40.5, 45.5]
 
     fig = pg.Figure()

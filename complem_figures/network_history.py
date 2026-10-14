@@ -10,11 +10,11 @@ Three panels on a shared time axis:
 New script (see pipeline/10_figures.md conventions); no existing figure script is modified.
 
 CLI:
-  python complem_figures/network_history_report.py \
+  python complem_figures/network_history.py \
       --catalog RESULT/SSST_result.csv \
       --obs obs/SSST_result.obs \
       --inventory stations/GLOBAL_inventory.xml \
-      --output complem_figures/network_history/network_history_report.png
+      --output complem_figures/network_history/network_history.png
 """
 
 import argparse
@@ -201,7 +201,7 @@ def main():
     ap.add_argument("--catalog", default="RESULT/SSST_result.csv")
     ap.add_argument("--obs", default="obs/SSST_result.obs")
     ap.add_argument("--inventory", default="stations/GLOBAL_inventory.xml")
-    ap.add_argument("--output", default="complem_figures/network_history/network_history_report.png")
+    ap.add_argument("--output", default="complem_figures/network_history/network_history.png")
     ap.add_argument("--year-min", type=int, default=1978)
     ap.add_argument("--year-max", type=int, default=2025)
     ap.add_argument("--no-declared", action="store_true",

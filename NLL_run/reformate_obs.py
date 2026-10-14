@@ -22,6 +22,7 @@ Usage
 """
 
 import argparse
+import glob
 import logging
 import os
 from dataclasses import dataclass
@@ -138,6 +139,14 @@ def reformate_obs(parameters, log_dir=None):
     logger.info(f"Min phases   : {parameters.minPhases}")
 
     os.makedirs(parameters.outputDir, exist_ok=True)
+
+    # NLLoc locates every *.nlloc_obs in the folder, so files left by an
+    # earlier run would be relocated with this one (and rematched by a
+    # publicId that may now name another event)
+    stale = glob.glob(os.path.join(parameters.outputDir, '*.nlloc_obs'))
+    for path in stale:
+        os.remove(path)
+    logger.info(f"Stale files removed : {len(stale)}")
 
     n_written = 0
     n_skipped = 0

@@ -26,7 +26,9 @@ import sys
 # NLL binary directory
 # ---------------------------------------------------------------------------
 
-_NLL_BIN = "/Users/bdupont/Desktop/Codes/NonLinLoc/src/bin"
+# TEMPORARY: locally patched build ('*' picks in EDT_OT_WT), until the fix is
+# upstream -- see NonLinLoc_fixed/README_TEMPORARY.md. Revert to NonLinLoc/src/bin.
+_NLL_BIN = "/Users/bdupont/Desktop/Codes/NonLinLoc_fixed/src/bin"
 
 # ---------------------------------------------------------------------------
 # Helpers

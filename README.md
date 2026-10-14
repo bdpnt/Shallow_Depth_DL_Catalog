@@ -106,18 +106,30 @@ Shallow_Depth_DL_Catalog/
 │
 ├── complem_figures/          # Visualization & statistical analysis
 │   ├── event_maps.py
+│   ├── profile_location_map.py
+│   ├── aoi_map.py
+│   ├── source_depth_maps.py
 │   ├── depth_maps.py
 │   ├── error_maps.py
+│   ├── error_vs_quality.py
 │   ├── depth_histogram.py
+│   ├── depth_histogram_compare.py
 │   ├── gutenberg_richter.py
+│   ├── magnitude_regression.py
 │   ├── cross_section.py
+│   ├── cross_section_panels.py
 │   ├── station_map.py
 │   ├── zone_map.py
+│   ├── network_history.py
 │   ├── event_ranking.py
 │   ├── plot_pdf_cloud.py
+│   ├── plot_pdf_cloud_2d.py
 │   ├── ssst_evolution.py
+│   ├── seismicity_3d.py
 │   ├── ssst_corrections.py
-│   └── station_colocation.py
+│   ├── temporary_network_impact.py
+│   ├── station_colocation.py
+│   └── basemap_lines.py      # GMT borders/shorelines cached for the matplotlib maps
 │
 ├── zone_Arette/              # Focused analysis of the Arette seismic zone
 │
@@ -222,6 +234,8 @@ Three selection decisions are made here and are not revisited later:
 - **An event with no magnitude of the expected type is dropped entirely**, picks included.
 - **RESIF, ICGC, IGN and LDG cover 2020–2025 only**; the entire 1978–2019 record comes from OMP. The catalog is therefore not homogeneous in source composition across time, which any completeness or rate analysis has to account for.
 
+**LDG dates 93 picks one day late.** In LDG's arrivals export, 93 picks (77 events) carry the date of the day after their event while hour, minute and second are right — LDG's own residual on them stays small (e.g. `ATE Sg 11/02/2021 22:51:38.40` for an event at 10/02/2021 22:51:16, residual 0.32 s). `fetch_obs/LDG.py` moves any pick lying 1 day ± 300 s after its origin back one day and logs the count; no other LDG pick lies more than 300 s from its origin.
+
 **Pick uncertainty is assigned, not measured.** No source bulletin publishes a per-pick timing error, so one is supplied: **0.05 s for P, 0.15 s for S**. The same two values reappear as `LOCQUAL2ERR` in the NonLinLoc control file and are reused for externally-ingested picks, so the error budget is consistent end to end — with one exception: **OMP assigns 0.05 s (or 0.10 s when flagged) to S picks as well as P**, using its own analyst quality digits instead. Since OMP supplies 40 % of the catalog's picks and effectively all of them before 2020, pre-2020 S arrivals are declared three times more precise than everyone else's.
 
 #### .obs format
@@ -257,11 +271,11 @@ Runs the following steps in sequence:
 
 **How a merged event is built.** When events from several sources match, latitude, longitude and depth are taken from the **first** source that has them — which is RESIF whenever it contributes, since it is the main bulletin — while the magnitude becomes the **mean** across contributing sources. The picks of all sources are pooled, then de-duplicated by (unified station code, phase), keeping the **first** occurrence; 392 610 pick lines are removed this way, so the rule decides the arrival time of a large fraction of the catalog. `PUBLIC_ID PYRENEES_%06d` is assigned here, in chronological order, and is the join key of every later stage — note it is a *position in a list*, not a content hash, so re-running the fusion with one event inserted renumbers everything after it.
 
-> ⚠️ **`build_global_bulletin.py` must not be re-run on already-processed bulletins.** Step 1 rewrites `obs/*.obs` **in place** and is not idempotent: on a second run it parses the already-substituted code (`FR.0041` → station name `0041`), finds no inventory match, and **deletes the pick**. The glob now matches 22 files, including `GLOBAL.obs`, every `GLOBAL_<N>*.obs`, `NLL_result.obs`, `NLL_result_augmented.obs` and `SSST_result.obs`, so a rerun would strip the picks from every later stage's output too.
+> ⚠️ **`build_global_bulletin.py` must not be re-run on already-processed bulletins.** Step 1 rewrites `obs/*.obs` **in place** and is not idempotent: on a second run it parses the already-substituted code (`FR.0041` → station name `0041`), finds no inventory match, and **deletes the pick**. Remap and fusion take the six source bulletins as an explicit list (`_source_catalogs` in `build_global_bulletin.py`, whose order is also the fusion order), so the outputs of later stages left in `obs/` are never touched — but the six themselves must come fresh from stage 2.
 
 > ⚠️ **Step 5 is interactive.** `find_and_merge_doubles` presents every group of near-identical events for a decision, once per source catalog (six times). Only pairs within 0.15 s and 10 km are merged automatically. Unlike the inventory stage, these choices *are* logged with the kept and dropped bulletin IDs.
 
-Note also that `_remove_magnitudes_under_1` is **commented out** (`fuse_bulletins.py:982`) even though `fuse_bulletins`'s own docstring still advertises the ML 1.0 cut; 31.3 % of `GLOBAL.obs` lies below ML 1.0.
+Note also that `_remove_magnitudes_under_1` is **commented out** (`fuse_bulletins.py:979`) even though `fuse_bulletins`'s own docstring still advertises the ML 1.0 cut; 31.3 % of `GLOBAL.obs` lies below ML 1.0.
 
 **Outputs:**
 - `obs/GLOBAL.obs` — unified catalog: **57 856 events / 1 285 838 picks** (18 070 cross-source duplicates merged)
@@ -382,7 +396,11 @@ Sits between the NLL and SSST relocation stages: a self-contained sub-pipeline f
 
 It runs *between* the two relocations because the association test needs an event location to predict a travel time against: the NLL pass produces locations good enough to associate new picks, and the SSST pass then exploits them.
 
-**Eight external datasets** are ingested in a fixed order, and the order encodes a precedence — `TEMP_STB` sources come after `TEMP_OMP` so that the per-event `(station, phase)` de-duplication silently drops whatever they duplicate. Each source is matched against the *previous* output, which is what makes that work, and which also means the stage **cannot be re-run** against an existing `NLL_result_augmented.obs`.
+**Nine external datasets** are ingested in a fixed order, and the order encodes a precedence — `TEMP_STB` sources come after `TEMP_OMP` so that the per-event `(station, phase)` de-duplication silently drops whatever they duplicate. Each source is matched against the *previous* output, which is what makes that work, and which also means the stage **cannot be re-run** against an existing `NLL_result_augmented.obs`.
+
+The ninth, **`Pamplona_PN_picks.txt`** (`TEMP_RSB`, prob ≥ 0.5), is not produced here: it is written into `temp_picks/pick_files/` by the sibling project `../PhaseNet_Pamplona` (`python main.py export`), PhaseNet picks for the Pamplona region incl. the YK temporary stations (C015–C018, F001–F003, Oct–Dec 2020). It comes **last**, so it only fills `(station, phase)` slots no other source filled, and it must exist before `add_temp_picks.py` runs. The figures below were measured over the first eight, before it was added — and before the 2026-10-14 `TEMP_OTH` fixes below, which change them.
+
+`pick_files/merged_other.txt` (`TEMP_OTH`) is **assembled by hand, not by code**: the plain concatenation of the HYPO71 phase files in `temp_picks/all_picks/PICKS_MATTHIEU/`, in the order argeles, data_bigorre_naturels, nat_pisco, stryde, spf, maupasacq_seismotech_reprocessed (CR stripped). In HYPO71 both the P and the S seconds count from the card's HH:MM and may exceed 60. Until 2026-10-14 the converter read the S as an offset from the P, which put every `TEMP_OTH` S late by its line's P second, and `merged_other.txt` was built from a reformatted `maupasacq.txt` that had carried P seconds ≥ 60 into the next minute without adjusting the S (5 950 S picks 60 s late; that copy is deleted). A `TEMP_OTH` line whose P is quality 4 is dropped whole, S included.
 
 Measured across the eight sources:
 
@@ -405,7 +423,7 @@ Added picks receive the project's standard **0.05 s P / 0.15 s S**, i.e. machine
 | 2 | `plot_travel_times.py` | QC figure: overlays all observed (distance, travel time) picks from a bulletin on top of the theoretical P/S bands. Skipped if the figure already exists. Also usable as a standalone script. |
 | 3 | `merge_omp_picks.py` | Merges all yearly OMP/PhaseNet CSV files from `picks_OMP/` subdirectories → `pick_files/merged_omp.csv`. Station `SMC` and year `2026` are excluded by default; configurable via `--drop-years`. Rows with a PhaseNet `phase_score` below 0.5 (default) are dropped. |
 | 4 | `merge_pyrenees_picks.py` | Concatenates RaspberryShake/PhaseNet `.txt` files from `picks_station_pyrenees/` and `picks_station_pyrenees2/` → `pick_files/merged_pyrenees.txt` and `pick_files/merged_pyrenees2.txt`. Lines with a `prob=` value below 0.5 (default) are dropped. |
-| 5 | `convert_picks.py` | Converts external pick files to the project's `.obs` pick line format; maps short station names to internal codes via `GLOBAL_code_map.txt`. Supports formats `TEMP_OBS`, `TEMP_RSB`, `TEMP_OMP`, `TEMP_OTH`, and `TEMP_STB`; new formats are added as handler functions. `TEMP_STB` (Strasbourg/RENASS-OMP picks, `temp_picks/all_picks/PICKS_MARC/`) reads directories of parquet files instead of a single text file, and drops picks below a `phase_score` threshold (default 0.5). Unresolved stations are reported as an end-of-run summary. |
+| 5 | `convert_picks.py` | Converts external pick files to the project's `.obs` pick line format; maps short station names to internal codes via `GLOBAL_code_map.txt`, restricted to the pick's network when the format carries one (`TEMP_RSB`, `TEMP_OMP`, `TEMP_STB` — short names such as `C015` are reused by YK 2020 and YS 2021), then by validity epoch compared at day granularity. Supports formats `TEMP_OBS`, `TEMP_RSB`, `TEMP_OMP`, `TEMP_OTH`, and `TEMP_STB`; new formats are added as handler functions. `TEMP_STB` (Strasbourg/RENASS-OMP picks, `temp_picks/all_picks/PICKS_MARC/`) reads directories of parquet files instead of a single text file, and drops picks below a `phase_score` threshold (default 0.5). Unresolved stations are reported as an end-of-run summary. |
 | 6 | `match_picks.py` | For each converted pick, finds candidate events within a 60 s origin-time window, filters by theoretical travel-time residual (±0.1 s P, ±0.3 s S, plus ±2.5 s t0-error margin), and appends matched picks to the bulletin. Chains against `obs/NLL_result.obs` → `obs/NLL_result_augmented.obs`. Runs `sort_picks` automatically on the output. |
 | — | `sort_picks.py` | Sorts all pick lines within each event block by ascending arrival time. Invoked automatically by step 6; also usable as a standalone script on any bulletin. |
 
@@ -423,7 +441,7 @@ Zones are processed **strictly sequentially** (Loc2ssst holds two full correctio
 Per zone:
 
 1. **`NLL_run/generate_ssst_runfiles.py`** — cuts the zone bulletin `obs/GLOBAL_<N>_SSST.obs` from the augmented catalog, writes `stations/GTSRCE_SSST_<N>.txt` (only the stations picked in the zone), and derives both control files from the NLL-stage `run/nll/run_<N>_DELAYS.in` (TRANS, grids, and localization parameters are reused verbatim, so the zone information entered in `run_NLL.py` stays the single source of truth): `run/ssst/run_<N>_NLL.in` (NLLoc) and `run/ssst/run_<N>_SSST.in` (Loc2ssst, with LSGRID/LSOUTGRID derived from the LOCGRID extent at a coarse 1 km spacing).
-2. **`NLL_run/reformate_obs.py`** — splits the zone bulletin into one `.nlloc_obs` file per event in `obs/nlloc_obs/GLOBAL_<N>/` (named and headed by `publicId`, which NLLoc propagates into its output — the rematch key).
+2. **`NLL_run/reformate_obs.py`** — splits the zone bulletin into one `.nlloc_obs` file per event in `obs/nlloc_obs/GLOBAL_<N>/` (named and headed by `publicId`, which NLLoc propagates into its output — the rematch key). It first deletes any `.nlloc_obs` left there by an earlier run: NLLoc locates every file in the folder, and a stale one would be rematched by a `publicId` the new fusion may have given to another event.
 3. **`NLL_run/run_ssst.py`** — builds the initial **P and S** travel-time grids (`VpVs = -9.99`: real S grids, so S station terms are gridded independently; skipped when already present), then runs the iteration loop. Fails fast on any non-zero NLLoc/Loc2ssst exit, on fatal disk/memory errors in the subprocess logs, and on empty obs/grid globs. Supports partial campaigns and resuming (`--iteration-start` / `--iteration-stop`).
 4. **Grid cleanup** — the zone's travel-time grids (the big disk consumers) are deleted automatically once the zone is done: every `ssst_corr<i>/` grid set except the last, which is kept with its symlinks materialized (the resume input of a partial campaign, the reusable final SSST model of a finished one). The initial grids (`run/ssst_time/Pyrenees_<N>/`) go too as soon as iteration 0 has run.
 
@@ -566,22 +584,33 @@ Two driver scripts run the `complem_figures/` modules:
 - `generate_complem_figures.py` — matplotlib figures: depth histograms, Gutenberg-Richter distributions, and per-period depth and error maps
 - `generate_complem_maps.py` — PyGMT event maps for each of the 6 NLL zones and the final catalog
 
-Each module can also be run standalone:
+Each module can also be run standalone. Most figures are drawn at their printed size (`--width-cm`, default 16 cm = `\linewidth` of an A4 page with 2.5 cm margins) and written as both a 300 dpi PNG and a vector PDF, so the report includes them at scale 1. Every module reading a `RESULT/*.csv` places events at the **PDF expectation** by default; `--solution maxlike` switches to the maximum-likelihood point (`maxlike_*` columns, or `latitude`/`longitude`/`depth` in a CSV written before `SAVE_NLLOC_EXPECTATION`). `cross_section.py` is the exception and still reads `latitude`/`longitude`/`depth`.
 
 | Script | Description |
 |--------|-------------|
-| `event_maps.py` | Geographic maps of seismicity (from `.obs`, `.txt`, or `.csv` NLL summary) |
+| `event_maps.py` | PyGMT map of seismicity coloured by depth (from `.obs` or a result `.csv`), with optional zone boxes, stations and cross-section overlays (`--profile`, `--profiles-default`) |
+| `profile_location_map.py` | Location map of the cross-section profiles, labelled X–X′, with towns and a whole-range inset |
+| `aoi_map.py` | The AOI boundary lines of `global_obs/filter_events_by_aoi.py` over the filtered RESIF and IGN+ICGC epicentres (read-only) |
+| `source_depth_maps.py` | Two source bulletins side by side (IGN / LDG by default), coloured by depth, sized by magnitude |
 | `depth_maps.py` | Per-period windowed-median depth maps |
-| `error_maps.py` | Per-period spatial distribution of location uncertainties (ERH, ERV) |
+| `error_maps.py` | Windowed-median ERH/ERV maps, one page per `--time-range`-year period or a single `--start`/`--end` page |
+| `error_vs_quality.py` | Published ERH/ERZ against RMS, azimuthal gap, phase count and nearest-station distance |
 | `depth_histogram.py` | Histogram of event depths |
+| `depth_histogram_compare.py` | Depths of the same events before relocation, at the expectation and at maximum likelihood, three stacked panels |
 | `gutenberg_richter.py` | Magnitude-frequency distribution (Gutenberg-Richter law) |
-| `cross_section.py` | Vertical cross-sections of seismicity |
+| `magnitude_regression.py` | The three magnitude-conversion regressions of `global_obs/generate_magnitude_models.py` as one figure |
+| `cross_section.py` | Map + vertical cross-section of seismicity along one profile |
+| `cross_section_panels.py` | Several depth sections of one profile side by side (default: Aneto before relocation / NLL / NLL-SSST) |
 | `station_map.py` | Map of seismic stations |
-| `zone_map.py` | Overview map of the 6 NLL relocation zones |
+| `zone_map.py` | Overview map of the 6 NLL relocation zones, rebuilt from `run/nll_loc/GLOBAL_<N>/last.in` — so it needs stage 4 to have run, and raises otherwise |
+| `network_history.py` | Seismicity per year, stations per year and temporary deployments on one time axis |
+| `temporary_network_impact.py` | What the external picks of `add_temp_picks.py` added: phase-count timeline before/after, and distance to the nearest station |
 | `event_ranking.py` | Ranks events by pdfVolume/ellipsoidVolume change (NLL → SSST); flags multi-zone and zone-changed events; carries the PDF-quality columns (Ψ, C_68, dip test) when present; optional whole-region gridmap PDF |
 | `plot_pdf_cloud.py` | Interactive 3D Plotly visualization of one event's NLLoc PDF scatter-cloud across SSST iterations |
+| `plot_pdf_cloud_2d.py` | Static 2-D view of the same cloud for one iteration: map view and vertical section, with the projected confidence ellipsoid |
 | `ssst_evolution.py` | Per-zone plot of pdfVolume/EllipsoidLen3/RMS evolution across SSST iterations (convergence QC) |
-| `ssst_corrections.py` | Reconstructs and maps the SSST travel-time corrections themselves — a per-station/phase atlas, the across-station spread, and the displacement SSST actually produced (see [below](#mapping-the-ssst-corrections--complem_figuresssst_correctionspy)) |
+| `seismicity_3d.py` | Interactive 3-D HTML map of the seismicity before relocation, after NLL and after SSST: click an event for its metadata and its trajectory across the three stages; year, magnitude and usable filters; vertical-exaggeration slider |
+| `ssst_corrections.py` | Reconstructs and maps the SSST travel-time corrections themselves — a per-station/phase atlas (or a single page), the across-station spread, and the displacement SSST actually produced (see [below](#mapping-the-ssst-corrections--complem_figuresssst_correctionspy)) |
 | `station_colocation.py` | Diagnostic for the 20 m co-location radius of [§1](#1-station-inventory-fusion): the observed distribution of station separations against what the merge actually merged |
 
 `event_ranking.py`, `plot_pdf_cloud.py`, and `ssst_evolution.py` are standalone diagnostics for the SSST stage, run directly rather than wired into `generate_complem_figures.py` / `generate_complem_maps.py`; they read `RESULT/NLL_result.csv`, `RESULT/SSST_result.csv`, and the per-zone `run/nll_loc/` / `run/ssst_loc/<run-name>/` outputs directly. `event_ranking.py` picks up the PDF-quality columns (Ψ, C_68, dip test) automatically once `NLL_run/pdf_metrics.py` has annotated `SSST_result.csv`, and runs without them otherwise — they are post-SSST only, since `run/nll_loc/` holds no `.scat` clouds to compare against. It also shares that module's windowed-grid helper (`windowed_stat_grid`), so its gridmaps and the PDF-metric maps bin space identically.
@@ -608,7 +637,7 @@ The distance is **event-to-grid-node** — the station's own position never ente
 
 Two products, from one reconstruction:
 
-- `<run>_station_atlas.pdf` — one page per station×phase field (all 300 with ≥ 100 usable arrivals, `--min-picks`): the five increments (`9999 → 50 → 15 → 5 → 1 km`) then their cumulative total, as depth-slice maps on a shared diverging scale. Nodes with no event inside the smoothing kernel are greyed — the field there is only the station static term. A station falling in two zones is drawn in the zone where it has the most arrivals, since the two zones ran separate `Loc2ssst` passes over different event sets and their fields are independent.
+- `<run>_station_atlas.pdf` — one page per station×phase field (all 300 with ≥ 100 usable arrivals, `--min-picks`): the five increments (`9999 → 50 → 15 → 5 → 1 km`, panels a–e) then their cumulative total (f), as depth-slice maps on a shared diverging scale, 3 rows × 2 at printed width with a one-line station header. `--product page --station STA:PHASE` writes a single such page, without header, as `<run>_<STA>_<PHASE>.png/.pdf`. Nodes with no event inside the smoothing kernel are greyed — the field there is only the station static term. A station falling in two zones is drawn in the zone where it has the most arrivals, since the two zones ran separate `Loc2ssst` passes over different event sets and their fields are independent.
 - `<run>_spread_map.pdf` — one catalog-wide map: at each event, the spread **across its recording stations** of the total correction applied to its P picks. A correction common to every station of an event is absorbed exactly by the origin time and cannot move the hypocentre, so the across-station dispersion, not the mean, is the part of the field that *can* relocate. It is **not** a map of where SSST actually did relocate — see the caveat below.
 
 ```bash
@@ -619,13 +648,15 @@ python complem_figures/ssst_corrections.py --extract-only    # fill the parse ca
 # presentation-quality pages for two chosen fields (~55 s each)
 python complem_figures/ssst_corrections.py --product atlas \
     --stations FR.0041:P,RD.0038:P --map-spacing 0.005
+# one page on its own, for the report
+python complem_figures/ssst_corrections.py --product page --station CA.0051:S
 ```
 
 Parsing the ~276 k per-event `.hyp` files takes ~100 s and is cached as `.npz` per (zone, iteration) in `run/ssst_corrections_cache/` (33 MB), so only the first run pays for it.
 
 **How the maps are drawn.** Nothing is interpolated between map nodes: `pcolormesh` draws one flat cell per node, and every node is an independent evaluation of the formula above. The smoothness on the page *is* the Gaussian kernel — the field is intrinsically smooth at scale `L`. That makes the node spacing a real constraint: the `--map-spacing` default of 0.02° is ~2.2 km in latitude and ~1.6 km in longitude at 43°N, so the `L = 1 km` panel is **undersampled** and part of its speckle is aliasing. The full 300-page atlas keeps the coarse spacing deliberately (212 s); drop to `--map-spacing 0.005` with `--stations` for the pages that need to be publication-grade, which resolves the finest panel properly at ~55 s per page.
 
-**A shared map frame is optional.** By default each page is framed on its own station's events — tight, but not comparable from page to page. `--extent=lon0,lon1,lat0,lat1` (the `=` form is required when `lon0` is negative) puts every page on one frame, clipped to each zone's `LSGRID` as read from `run/ssst/run_<N>_SSST.in`. That clipping matters: zone 2's correction grid spans only lon −2.22 to 1.57, so a full-Pyrenees frame is largely territory where `Loc2ssst` computed nothing, and it is greyed rather than filled with the station's static term. On a `-2.25,3.5,41.75,43.75` frame each zone's grid covers ~68 % of the page.
+**A shared map frame is optional.** By default each page is framed on its own station's events and the station itself — tight, but not comparable from page to page. `--extent=lon0,lon1,lat0,lat1` (the `=` form is required when `lon0` is negative) puts every page on one frame, clipped to each zone's `LSGRID` as read from `run/ssst/run_<N>_SSST.in`. That clipping matters: zone 2's correction grid spans only lon −2.22 to 1.57, so a full-Pyrenees frame is largely territory where `Loc2ssst` computed nothing, and it is greyed rather than filled with the station's static term. On a `-2.25,3.5,41.75,43.75` frame each zone's grid covers ~68 % of the page.
 
 **The slice depth is data-driven, not fixed.** `--depth` defaults to each station's own median event depth (~6.9 km for `FR.0041`) rather than a round number. This matters because the kernel is 3-D: a slice `dz` off the event mass damps every contribution by `exp(−dz²/L²)`. That is harmless at `L = 15 km` but devastating at `L = 1 km` — an earlier fixed 10 km slice, against a catalog median depth of 6.6–7.3 km, cut `FR.0041`'s median summed weight in the finest panel from 5.7 to 2.0 and left it looking far emptier than the data warrants. Pass `--depth` only to compare stations on a common plane, accepting that cost.
 
