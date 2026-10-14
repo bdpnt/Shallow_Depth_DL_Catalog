@@ -26,7 +26,7 @@ Status tags: **still open** (unchanged since the report), **escalated**
 **Status** line: *Fixed* (with its commit on `claude`, merged in PR #49),
 *Skipped* (decision taken, reason given) or *No fix needed*. Fixing them
 uncovered two new defects, listed in §1c. The weekly audit reports were then
-deleted; they remain in git history (last version at `fa2b92f`). Their
+deleted, and so was `review/full-audit-2026-07-12.md`; they remain in git history (last versions at `fa2b92f` and `5a8c2a1`). Their
 performance and cleanup findings, which this review had dropped, are carried
 in §5 so that nothing is lost with them.
 
@@ -241,6 +241,7 @@ Performance:
 - `NLL_run/run_ssst.py:264-294` — the per-event obs chunks are rebuilt and every `.nlloc_obs` re-copied (`shutil.copy2`) on each of the up to 6 SSST iterations; they could be built once per campaign. [07-12]
 - `NLL_run/run_ssst.py:333-364` — chunk outputs are merged with `shutil.copytree(..., dirs_exist_ok=True)` then deleted; per-file `os.replace` on the same filesystem would halve the write volume. [07-12]
 - `complem_figures/depth_maps.py:118-131` — windowed-median grid built with a pure-Python double loop over ~344 000 cells, each masking the full event frame (O(cells × events)); `error_maps` and `event_ranking` already use the binned rewrite. [06-21]
+- `NLL_run/merge_regional_results.py:272` — `true_erh` computed with a row-wise `apply` (one eigen-decomposition per event through Python dispatch); fine at ~5·10⁴ events, could be vectorized with stacked 2×2 `np.linalg.eigvalsh`. [full audit 07-12]
 - `complem_figures/station_colocation.py:261,267` — `np.sort(pair_distances)` computed twice on ~2.9 M elements; sort once. [09-06]
 - `complem_figures/seismicity_3d.py:120` — per-row `iterrows()` + `classify()`, 0.38 s on 46 k rows. If ever worth it, vectorize *inside* `export_quakeml` so the `pyr:usable` rule stays single. [10-11]
 
@@ -265,4 +266,4 @@ Error messages and robustness:
 - **§1c new (2):** both fixed — the `TEMP_OTH` S timing and the broken maupasacq copy.
 - **§2 figures (2):** both fixed.
 - **§3 latent (~25):** still open, one fixed in passing.
-- **§5 performance/cleanup (15):** open, carried from the deleted audit reports.
+- **§5 performance/cleanup (16):** open, carried from the deleted audit reports.
