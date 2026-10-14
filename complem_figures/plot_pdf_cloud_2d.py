@@ -657,7 +657,7 @@ def main():
                         help="Sample colouring: 'log' reads the 4th .scat field as ln(PDF) and colours by "
                              "its offset from the mode (default), 'linear' reads it as a density, "
                              "'none' draws every sample in one colour")
-    parser.add_argument('--cmap', default='viridis', help='Colormap for --color pdf (default: viridis)')
+    parser.add_argument('--cmap', default='viridis', help='Colormap for --color log|linear (default: viridis)')
     parser.add_argument('--marginal', action='store_true',
                         help='Also draw the 2-D marginal confidence ellipse (2 d.o.f.), dashed')
     parser.add_argument('--no-section-line', dest='section_line', action='store_false',
