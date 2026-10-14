@@ -622,6 +622,10 @@ def station_fields(cache, zone, station, phase, depth=None, spacing=_MAP_SPACING
     if not latlon:
         return None
     if extent is None:
+        # keep the station in frame even when all its events lie to one side
+        sta = read_station_latlon(zone).get(station)
+        if sta is not None:
+            latlon.append((np.array([sta[0]]), np.array([sta[1]])))
         lats, lons = _map_grid(latlon, spacing=spacing)
     else:
         lon0, lon1, lat0, lat1 = extent
@@ -1174,6 +1178,11 @@ def main():
     p.add_argument('--extract-only', action='store_true',
                    help='fill the parse cache and stop')
     args = p.parse_args()
+    if args.extent and args.extent != 'auto':
+        bounds = [float(v) for v in args.extent.split(',')]
+        if len(bounds) != 4 or bounds[0] >= bounds[1] or bounds[2] >= bounds[3]:
+            p.error(f'--extent must be lon0,lon1,lat0,lat1 with lon0 < lon1 and '
+                    f'lat0 < lat1, got {args.extent}')
 
     _setup_logger()
     params = SsstCorrParams(
