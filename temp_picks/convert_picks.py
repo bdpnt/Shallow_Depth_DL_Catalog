@@ -424,8 +424,9 @@ def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=Non
     quality digit (0-9; >=4 means unusable, per project convention). The
     15-char date/time field packs YY MM DD HH MI SS.SS as six 2-char
     sub-fields, each right-justified with a space instead of a leading zero
-    (e.g. " 6" means 06). The optional trailing part gives the S arrival as
-    an offset in seconds after the P arrival, followed by " S " and the
+    (e.g. " 6" means 06). The optional trailing part gives the S arrival in
+    seconds after the line's HH:MM (the HYPO71 phase-card convention, so it
+    exceeds 60 when S falls in the next minute), followed by " S " and the
     S-phase quality digit.
 
     P-phase quality 4 lines store an unusable placeholder time (blank or
@@ -479,10 +480,10 @@ def convert_temp_oth(line, code_map, skipped_stations=None, fallback_counter=Non
     if rest.strip():
         m2 = _TEMP_OTH_S_RE.match(rest)
         if m2:
-            offset_str, quality_s_str = m2.groups()
+            s_sec_str, quality_s_str = m2.groups()
             quality_s = int(quality_s_str)
             if quality_s < 4:
-                s_dt  = p_dt + timedelta(seconds=float(offset_str))
+                s_dt  = p_dt.replace(second=0, microsecond=0) + timedelta(seconds=float(s_sec_str))
                 err_s = '0.30' if quality_s > 2 else '0.15'
                 results.append(_format_pick_line(
                     internal_code, 'S', s_dt.strftime('%Y%m%d'), s_dt.strftime('%H%M'),
