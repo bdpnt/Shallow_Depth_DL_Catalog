@@ -260,8 +260,11 @@ def plot_period(events, fig_save, parameters):
         for side in ('top', 'right'):
             ax.spines[side].set_visible(False)
         valid = median[np.isfinite(median)]
-        print(f'  {column.upper()}: {valid.size} cells, mean of medians {np.mean(valid):.2f} km, '
-              f'max {np.max(valid):.2f} km, median over events {np.nanmedian(events[column]):.2f} km')
+        if valid.size:
+            print(f'  {column.upper()}: {valid.size} cells, mean of medians {np.mean(valid):.2f} km, '
+                  f'max {np.max(valid):.2f} km, median over events {np.nanmedian(events[column]):.2f} km')
+        else:
+            print(f'  {column.upper()}: no cell reaches {_MIN_N} events, the map is empty')
 
     cb_h = 0.7 * (2 * map_h + gap)
     cax  = fig.add_axes([(left + map_w + 0.35) / width,
