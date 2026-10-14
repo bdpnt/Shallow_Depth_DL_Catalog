@@ -19,7 +19,9 @@ campaign or running only the first iterations now and the rest later.
 Differences from the validated CODES_SSST original (porting requirements of
 SSST_INTEGRATION.md §8): fail-fast on any non-zero subprocess exit and on
 empty obs/time-grid globs, round-robin obs chunking, separate NLLoc/Loc2ssst
-core counts, per-iteration chunk-directory cleanup, per-zone tmp dir /
+core counts, per-iteration chunk-directory cleanup, per-iteration grid
+cleanup (each iteration's input grid set, the initial grids included, is
+deleted once its Loc2ssst succeeded - at most two sets on disk), per-zone tmp dir /
 journal / ssst.list, and binaries invoked from the NLL bin directory instead
 of relying on PATH. build_grids() prepares the initial P and S grids
 (Vel2Grid + Grid2Time twice, once per phase).
@@ -135,6 +137,29 @@ def _remove_path(path):
         shutil.rmtree(path)
     else:
         os.remove(path)
+
+
+def _retire_input_grids(params, input_dir, output_dir):
+    """Free the grid set an iteration's Loc2ssst has just read.
+
+    The stations Loc2ssst did not correct are still symlinks from output_dir
+    into input_dir; each target is MOVED onto its link (os.replace: same
+    filesystem, atomic, no extra disk) rather than copied, since input_dir
+    is deleted right after. Input sets are always fully materialized by the
+    previous call, so every link is a single hop. Called only once Loc2ssst
+    succeeded: the resume point is then the next iteration, which reads
+    output_dir alone.
+    """
+    n_moved = 0
+    for root, _, files in os.walk(output_dir):
+        for name in files:
+            link = os.path.join(root, name)
+            if os.path.islink(link):
+                os.replace(os.path.realpath(link), link)
+                n_moved += 1
+    shutil.rmtree(input_dir)
+    _print(params, f'Grids retired: {os.path.relpath(input_dir, _PROJECT_ROOT)} '
+                   f'({n_moved} uncorrected grid files moved forward)')
 
 
 def _check_disk(out_dir):
@@ -646,6 +671,14 @@ def run_ssst(params, iteration_start=0, iteration_stop=None):
 
         _run_loc2ssst_parallel(params, ssst_control_file_tmp, iteration)
 
+        # rolling cleanup: the grids this iteration read (the initial grids
+        # at iteration 0, ssst_corr<i-1> afterwards) are never read again,
+        # so at most two grid sets sit on disk at any time
+        _retire_input_grids(params,
+                            os.path.dirname(os.path.dirname(time_root))
+                            if iteration > 0 else os.path.dirname(time_root),
+                            os.path.dirname(ls_out_root))
+
         # chain the iterations: the grids just written become the input
         # travel-time grids of the next iteration's NLLoc step
         time_root = ls_out_root
@@ -669,13 +702,12 @@ def run_ssst(params, iteration_start=0, iteration_stop=None):
         ssst_model_dir = os.path.join(params.outRoot, params.runName,
                                       params.ssstModelName)
         # suggested manual cleanup once the run is validated: intermediate
-        # grids (all but the last ssst_corr) and intermediate locations
-        # (all but the final loc_ssst_corr) are deletable. NOT executed here
-        # (the symlink chains make automatic deletion unsafe).
+        # locations (all but the final loc_ssst_corr) are deletable. NOT
+        # executed here (diagnostics such as ssst_evolution.py read them).
+        # Intermediate grids need no entry: _retire_input_grids() already
+        # removed them iteration by iteration.
         k = iteration_final
         _log_append(params, '\n# cleanup commands (after validation only):\n')
-        if k >= 2:
-            _log_append(params, f'# rm -r {ssst_model_dir}/ssst_corr{{0..{k - 2}}}\n')
         _log_append(params, f'# rm -r {ssst_model_dir}/loc_ssst_corr{{0..{k - 1}}}\n')
 
         # record the definitive catalog in the ssst list

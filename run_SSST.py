@@ -21,14 +21,14 @@ LOC2SSST_CORES parallel processes):
      only on a fresh start - a resume never touches them, see 5.).
   4. Runs the iterative NLLoc + Loc2ssst workflow (NLL_run/run_ssst.py):
      len(CHAR_DISTS) SSST iterations + one final NLLoc-only relocation.
-  5. Deletes the zone's travel-time grids, the big disk consumers: every
-     ssst_corr<i>/ grid set except the last one, which is kept with its
-     symlinks materialized (resume input on a partial campaign, reusable
-     final SSST model on a finished one). The initial grids
-     (run/ssst_time/Pyrenees_<N>/) go too as soon as iteration 0 has run -
-     once ssst_corr0 exists and is materialized, resuming at any
-     iteration_start > 0 reads it (or a later ssst_corr<i>) instead and
-     never touches run/ssst_time/ again.
+     The travel-time grids, the big disk consumers, are retired as it
+     goes: once iteration i's Loc2ssst has written ssst_corr<i>/, the set
+     it read (run/ssst_time/Pyrenees_<N>/ at i = 0, ssst_corr<i-1>/
+     afterwards) is deleted, so at most two grid sets are ever on disk.
+     Only the last set survives, fully materialized (resume input on a
+     partial campaign, reusable final SSST model on a finished one).
+  5. Safety-net cleanup (_cleanup_zone_grids): the same end state for a
+     campaign whose earlier iterations ran before the rolling cleanup.
 
 After all zones complete (all final CSVs present):
   6. Merges the zone CSVs into RESULT/SSST_result.csv (zone-overlap
@@ -112,6 +112,12 @@ def _final_csv(key):
 
 def _cleanup_zone_grids(key, iteration_start):
     """Delete the zone's travel-time grids once they are no longer used.
+
+    run_ssst() already does this iteration by iteration, so on a campaign
+    run entirely with it this finds a single, materialized set and nothing
+    to do. It still matters on a resume of a campaign started before that
+    rolling cleanup existed, where earlier ssst_corr sets and symlink
+    chains are left over.
 
     The LAST ssst_corr set is always kept — it is the resume input of the
     next iteration on a partial campaign, and the reusable final SSST model
