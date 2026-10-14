@@ -45,6 +45,9 @@ Usage
     python run_SSST.py --zones 1,2       # only these zones
     python run_SSST.py --iteration-stop 2   # partial campaign (iterations 0-2)
     python run_SSST.py --iteration-start 3  # resume (prep + grids are reused)
+    python run_SSST.py --decaff          # let the machine idle-sleep
+
+Unless --decaff is given, the machine is kept awake (caffeinate) for the run.
 """
 
 import argparse
@@ -59,6 +62,7 @@ from NLL_run.run_ssst               import SSSTRunParams, build_grids, run_ssst
 from NLL_run.merge_regional_results import merge_bulletins
 from NLL_run.match_pre_post_relocation import MatchCatalogsParams, save_bulletin
 from NLL_run.pdf_metrics            import PdfMetricsParams, compute_metrics
+from NLL_run.keep_awake             import keep_awake
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -290,6 +294,8 @@ def main():
                              'final NLLoc-only relocation)')
     parser.add_argument('--rebuild-grids', action='store_true',
                         help='Rebuild the P/S grids even when they exist')
+    parser.add_argument('--decaff', action='store_true',
+                        help='Do not keep the machine awake with caffeinate')
     args = parser.parse_args()
 
     zones = args.zones.split(',') if args.zones else None
@@ -297,6 +303,9 @@ def main():
         unknown = [z for z in zones if z not in _ZONES]
         if unknown:
             parser.error(f'unknown zone(s): {", ".join(unknown)}')
+
+    if not args.decaff:
+        keep_awake()
 
     run_pipeline(zones=zones,
                  iteration_start=args.iteration_start,

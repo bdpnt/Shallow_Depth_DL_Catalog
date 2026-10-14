@@ -298,6 +298,8 @@ The study area is too large for a single NLL run, so it is divided into **6 geog
 
 **Script:** `run_NLL.py`
 
+The run keeps the Mac awake (`caffeinate -i`, released automatically when the process ends); pass `--decaff` to let it idle-sleep. Closing the lid still sleeps a laptop, which pauses the run until wake. The same applies to `run_SSST.py`.
+
 #### The NonLinLoc control file
 
 `NLL_run/generate_regional_runfiles.py:303-353` writes the entire control file as hardcoded literals. These values condition every hypocentre in the catalog, so they are recorded here. The velocity model is **`Pyrenees_1D`, after Souriau & Pauchet (1998)**:
@@ -442,7 +444,7 @@ Per zone:
 
 1. **`NLL_run/generate_ssst_runfiles.py`** — cuts the zone bulletin `obs/GLOBAL_<N>_SSST.obs` from the augmented catalog, writes `stations/GTSRCE_SSST_<N>.txt` (only the stations picked in the zone), and derives both control files from the NLL-stage `run/nll/run_<N>_DELAYS.in` (TRANS, grids, and localization parameters are reused verbatim, so the zone information entered in `run_NLL.py` stays the single source of truth): `run/ssst/run_<N>_NLL.in` (NLLoc) and `run/ssst/run_<N>_SSST.in` (Loc2ssst, with LSGRID/LSOUTGRID derived from the LOCGRID extent at a coarse 1 km spacing).
 2. **`NLL_run/reformate_obs.py`** — splits the zone bulletin into one `.nlloc_obs` file per event in `obs/nlloc_obs/GLOBAL_<N>/` (named and headed by `publicId`, which NLLoc propagates into its output — the rematch key). It first deletes any `.nlloc_obs` left there by an earlier run: NLLoc locates every file in the folder, and a stale one would be rematched by a `publicId` the new fusion may have given to another event.
-3. **`NLL_run/run_ssst.py`** — builds the initial **P and S** travel-time grids (`VpVs = -9.99`: real S grids, so S station terms are gridded independently; skipped when already present), then runs the iteration loop. Fails fast on any non-zero NLLoc/Loc2ssst exit, on fatal disk/memory errors in the subprocess logs, and on empty obs/grid globs. Supports partial campaigns and resuming (`--iteration-start` / `--iteration-stop`).
+3. **`NLL_run/run_ssst.py`** — builds the initial **P and S** travel-time grids (`VpVs = -9.99`: real S grids, so S station terms are gridded independently; skipped when already present), then runs the iteration loop. Fails fast on any non-zero NLLoc/Loc2ssst exit, on fatal disk/memory errors in the subprocess logs, and on empty obs/grid globs. Supports partial campaigns and resuming (`--iteration-start` / `--iteration-stop`); keeps the Mac awake unless `--decaff` is given.
 4. **Grid cleanup** — the zone's travel-time grids (the big disk consumers) are deleted automatically once the zone is done: every `ssst_corr<i>/` grid set except the last, which is kept with its symlinks materialized (the resume input of a partial campaign, the reusable final SSST model of a finished one). The initial grids (`run/ssst_time/Pyrenees_<N>/`) go too as soon as iteration 0 has run.
 
 Once all zones are complete, the final-iteration CSVs feed the same chain as the NLL stage: `merge_regional_results.merge_bulletins` → `RESULT/SSST_result.csv` (zone-overlap duplicates resolved by lowest `pdfVolume`), then `match_pre_post_relocation.save_bulletin` rematching against `obs/NLL_result_augmented.obs` → `obs/SSST_result.obs`. **50 918 → 46 224 events**; the 4 694 lost are mostly the `LSPHSTAT` phase minimum of 6, against NLL's 4.
