@@ -50,7 +50,9 @@ _MODULE_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 
 # NLL binary directory (same as run_zone.py)
-_NLL_BIN = "/Users/bdupont/Desktop/Codes/NonLinLoc/src/bin"
+# TEMPORARY: locally patched build ('*' picks in EDT_OT_WT), until the fix is
+# upstream -- see NonLinLoc_fixed/README_TEMPORARY.md. Revert to NonLinLoc/src/bin.
+_NLL_BIN = "/Users/bdupont/Desktop/Codes/NonLinLoc_fixed/src/bin"
 
 _MIN_FREE_GB = 50.0
 
