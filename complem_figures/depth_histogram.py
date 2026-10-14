@@ -92,6 +92,10 @@ def _read_depths(file_bulletin, solution='expect', before_year=None):
 def generate_figure(parameters):
     depths = _read_depths(parameters.file_bulletin, parameters.solution,
                           parameters.before_year)
+    if depths.empty:
+        before = (f' before {parameters.before_year}'
+                  if parameters.before_year is not None else '')
+        raise ValueError(f'No event{before} in {parameters.file_bulletin}')
 
     n_total  = len(depths)
     median   = depths.median()
