@@ -16,7 +16,7 @@ import argparse
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 
 import pandas as pd
 from obspy import UTCDateTime
@@ -25,6 +25,11 @@ from obspy import UTCDateTime
 logger = logging.getLogger('fetch_obs.LDG')
 
 _DEFAULT_LOG_DIR = 'fetch_obs/console_output/'
+
+# LDG's export dates a few picks one day after their event while hour,
+# minute and second are right (LDG's own residual stays small); a pick lying
+# one day +/- this many seconds after its origin is moved back one day
+_DAY_SHIFT_SLACK_S = 300
 
 
 def _setup_logger(log_dir):
@@ -94,6 +99,7 @@ def write_catalog_to_obs(parameters, log_dir=None):
     n_events_no_picks  = 0
     n_picks            = 0
     n_picks_skip_phase = 0
+    n_picks_day_fixed  = 0
 
     with open(parameters.save_name, 'w') as f:
         f.write(f'### Catalog generated on the {UTCDateTime()}\n')
@@ -129,6 +135,8 @@ def write_catalog_to_obs(parameters, log_dir=None):
             )
             n_events += 1
 
+            origin_time = dt.strptime(row.datetime, '%d/%m/%Y %H:%M:%S')
+
             event_id = row.orid
             if event_id not in arrivals_by_orid.groups:
                 n_events_no_picks += 1
@@ -149,6 +157,14 @@ def write_catalog_to_obs(parameters, log_dir=None):
                 hr        = row_p.arrtime[11:13]
                 mn        = row_p.arrtime[14:16]
                 sc        = row_p.arrtime[17:22].ljust(6, '0')
+
+                arrival_minute = dt.strptime(row_p.arrtime[:16], '%d/%m/%Y %H:%M')
+                offset_s = (arrival_minute - origin_time).total_seconds() + float(sc)
+                if abs(offset_s - 86400) <= _DAY_SHIFT_SLACK_S:
+                    arrival_day = arrival_minute - timedelta(days=1)
+                    yr, mo, dy  = f'{arrival_day:%Y}', f'{arrival_day:%m}', f'{arrival_day:%d}'
+                    n_picks_day_fixed += 1
+
                 error_mag = '0.05' if phase.lower().startswith('p') else '0.15'
 
                 code       = ('.' + station).ljust(9)
@@ -171,6 +187,7 @@ def write_catalog_to_obs(parameters, log_dir=None):
     logger.info(f"Events written with no picks          : {n_events_no_picks}")
     logger.info(f"Picks written                         : {n_picks}")
     logger.info(f"Picks skipped (wrong phase)           : {n_picks_skip_phase}")
+    logger.info(f"Picks moved back one day (date error) : {n_picks_day_fixed}")
     logger.info(f"Output: {parameters.save_name}")
     return {'output': parameters.save_name}
 

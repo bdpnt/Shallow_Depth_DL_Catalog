@@ -36,6 +36,7 @@ The workflow follows 7 main stages:
 - Output: **six** `.obs` files in `obs/` — OMP contributes two, `OMP_78-19.obs` and `OMP_2016.obs` (a re-picked 2016: 2 178 events against 1 568 for the same year in the archive file; both are fused, the overlap resolved by the fusion's loose+pick-validated matching)
 - 75 926 events / 1 784 332 picks total. RESIF/ICGC/IGN/LDG cover **2020–2025 only**; the whole 1978–2019 record comes from OMP, so the catalog is not homogeneous in source composition across time
 - Only **manual** P/S picks are kept (RESIF `evaluation_mode`, IGN/ICGC GSE2 `m__`). An event with no magnitude of the expected type is dropped entirely, picks included
+- LDG's export dates **93 picks (77 events) one day after their event** with the right hour/minute/second (LDG's own residual stays small); `fetch_obs/LDG.py` moves any pick lying 1 day ± 300 s after its origin back one day and logs the count
 - Pick uncertainty is **assigned, not measured** — no source publishes it: **0.05 s for P, 0.15 s for S**, reused as `LOCQUAL2ERR` in §4. OMP is the exception: 0.05 s normally / 0.10 s when flagged, **for P and S alike**
 
 ### 3. Catalog Harmonization
