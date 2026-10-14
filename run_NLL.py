@@ -27,9 +27,11 @@ After all zones complete:
 
 Usage
 -----
-    python run_NLL.py
+    python run_NLL.py              # keeps the machine awake (caffeinate)
+    python run_NLL.py --decaff     # lets it idle-sleep
 """
 
+import argparse
 import glob
 import os
 import shutil
@@ -40,6 +42,7 @@ from NLL_run.filter_distant_picks       import RemoveFarPicksParams
 from NLL_run.generate_regional_runfiles import GenRunParams
 from NLL_run.append_station_delays      import SecondRunParams, append_station_delays
 from NLL_run.export_locdelay_info       import export_locdelay_info
+from NLL_run.keep_awake                 import keep_awake
 from NLL_run.match_pre_post_relocation  import MatchCatalogsParams, save_bulletin
 from NLL_run.merge_regional_results     import merge_bulletins
 from NLL_run.run_zone                   import run_zone
@@ -185,6 +188,15 @@ def run_pipeline():
 # ---------------------------------------------------------------------------
 
 def main():
+    parser = argparse.ArgumentParser(
+        description='NLL relocation of obs/GLOBAL.obs over the 6 zones.')
+    parser.add_argument('--decaff', action='store_true',
+                        help='Do not keep the machine awake with caffeinate')
+    args = parser.parse_args()
+
+    if not args.decaff:
+        keep_awake()
+
     run_pipeline()
 
 
