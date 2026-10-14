@@ -16,9 +16,15 @@ localization parameters are reused verbatim, so the zone information entered
 once in run_NLL.py stays the single source of truth (and the TRANS of the two
 control files can never diverge). Only the statements that differ for SSST
 are rewritten: grid paths (run/ssst_model, run/ssst_time), the GTSRCE include,
-and LOCHYPOUT (SAVE_NLLOC_ALL + SAVE_NLLOC_EXPECTATION, without the
+LOCHYPOUT (SAVE_NLLOC_ALL + SAVE_NLLOC_EXPECTATION, without the
 SAVE_NLLOC_OCTREE/SAVE_FMAMP flags that run_ssst.py appends itself on the final
-iteration only).
+iteration only), and VGGRID, re-gridded at timeGridSpacing (0.1 km against the
+NLL stage's 0.05, same extent): NLLoc holds one full 2-D time grid per arrival
+while it locates an event, so at 0.05 km the ~700-pick events of the 2017
+Maupasacq array need ~21 GB per NLLoc process, and the round-robin chunks
+hit them together (they cluster in time). Measured at 0.1 km: 5.4 GB for a
+726-arrival event; on a 101-arrival one the expectation moves by 6/18/40 m
+(x/y/z) and the origin time by 6 ms.
 
 The Loc2ssst LSGRID/LSOUTGRID are computed from the parsed LOCGRID extent,
 rescaled to a coarse 1.0 km spacing (Loc2ssst holds two full LSGRID buffers
@@ -91,6 +97,10 @@ class GenSSSTRunParams:
     lsphstat:        list = field(default_factory=lambda: [0.15, 6, 200.0, 0.3, 0.5, 10.0])
     lsGridSpacing:   float = 1.0   # km — coarse Loc2ssst correction grid
     lsGridNz:        int   = 40    # 40 nodes from -3 km -> 36 km depth
+    # km — SSST 2-D travel-time grid spacing (the NLL stage uses 0.05). NLLoc
+    # holds one full 2-D grid per arrival while locating an event, so RAM per
+    # event scales as 1/spacing^2: measured ~29 MB/arrival at 0.05, ~7.4 at 0.1
+    timeGridSpacing: float = 0.1
 
 
 # ---------------------------------------------------------------------------
@@ -133,11 +143,29 @@ def _verify_folders(parameters):
             os.makedirs(parent, exist_ok=True)
 
 
+def _regrid_vggrid(fields, spacing):
+    """Re-grid a VGGRID statement at `spacing` km, keeping its extent.
+
+    VGGRID nx ny nz x0 y0 z0 dx dy dz type. For the 2-D (GRID2D) grids, y is
+    the epicentral distance and z the depth; their extent is kept (rounded
+    up, + 1 closing node) so the bottom stays at or below the original one,
+    which the LOCGRID containment guard below relies on. nx (2 for a 2-D
+    grid) is kept as is.
+    """
+    nx, ny, nz = int(fields[1]), int(fields[2]), int(fields[3])
+    dy, dz = float(fields[8]), float(fields[9])
+    ny_new = math.ceil(round((ny - 1) * dy / spacing, 6)) + 1
+    nz_new = math.ceil(round((nz - 1) * dz / spacing, 6)) + 1
+    x0, y0, z0 = fields[4], fields[5], fields[6]
+    return (f'VGGRID  {nx} {ny_new} {nz_new}  {x0} {y0} {z0}  '
+            f'{spacing} {spacing} {spacing}  {" ".join(fields[10:])}\n')
+
+
 def _transform_nll_runfile(nll_lines, parameters):
     """Rewrite the NLL-stage run file into the SSST-stage NLLoc control.
 
     Everything passes through unchanged except the statements that differ
-    for the SSST stage (grid paths, GTSRCE include, LOCHYPOUT) and the two
+    for the SSST stage (grid paths and spacing, GTSRCE include, LOCHYPOUT) and the two
     statements that run_ssst.py appends per NLLoc chunk anyway (LOCFILES,
     LOCMETH), which are replaced by explanatory comments.
     """
@@ -146,6 +174,8 @@ def _transform_nll_runfile(nll_lines, parameters):
         stripped = line.lstrip()
         if stripped.startswith('VGOUT'):
             out.append(f'VGOUT  {parameters.fileModel}\n')
+        elif stripped.startswith('VGGRID'):
+            out.append(_regrid_vggrid(stripped.split(), parameters.timeGridSpacing))
         elif stripped.startswith('GTFILES'):
             # P pass; run_ssst.build_grids() derives the S variant itself
             out.append(f'GTFILES  {parameters.fileModel}  {parameters.fileTime} P\n')

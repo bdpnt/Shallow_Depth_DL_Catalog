@@ -260,6 +260,19 @@ def _read_min_num_phases(path):
     raise ValueError(f'no LSPHSTAT statement found in {path}')
 
 
+def _grid_geometry_matches(control_file, hdr_path):
+    """True when a 2-D time-grid header has the control file's VGGRID
+    distance/depth node counts and spacings (ny nz, dy dz)."""
+    with open(control_file) as f:
+        vggrid = next(line.split() for line in f
+                      if line.split() and line.split()[0] == 'VGGRID')
+    with open(hdr_path) as f:
+        hdr = f.readline().split()
+    return ([int(v) for v in hdr[1:3]] == [int(v) for v in vggrid[2:4]]
+            and all(abs(float(a) - float(b)) < 1e-9
+                    for a, b in zip(hdr[7:9], vggrid[8:10])))
+
+
 def _read_station_codes(path):
     """Read the Loc2ssst station list from a GTSRCE-style station file.
 
@@ -448,9 +461,16 @@ def build_grids(params, rebuild=False):
     p_grids = glob.glob(f'{params.initTimeRoot}.P.*.time.hdr')
     s_grids = glob.glob(f'{params.initTimeRoot}.S.*.time.hdr')
     if p_grids and s_grids and not rebuild:
-        _print(params, f'Grids already present at {params.initTimeRoot} '
-                       f'({len(p_grids)} P, {len(s_grids)} S) - skipping build')
-        return
+        if _grid_geometry_matches(params.fileRunNLL, p_grids[0]):
+            _print(params, f'Grids already present at {params.initTimeRoot} '
+                           f'({len(p_grids)} P, {len(s_grids)} S) - skipping build')
+            return
+        # e.g. grids left by a crashed run made at another VGGRID spacing:
+        # NLLoc would read them without complaint, at the wrong resolution
+        _print(params, f'Grids at {params.initTimeRoot} do not match the VGGRID '
+                       f'of {os.path.basename(params.fileRunNLL)} - rebuilding')
+        shutil.rmtree(os.path.dirname(params.initTimeRoot))
+        os.makedirs(os.path.dirname(params.initTimeRoot))
 
     os.makedirs(params.tmpDir, exist_ok=True)
     _check_disk(os.path.dirname(params.initTimeRoot) or '.')
