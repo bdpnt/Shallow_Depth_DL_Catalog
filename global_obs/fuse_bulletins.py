@@ -13,7 +13,8 @@ Usage
     python global_obs/fuse_bulletins.py \
         --global-bulletin-path obs/GLOBAL.obs \
         --main-bulletin-path   obs/LDG_20-25.obs \
-        --folder-path          "obs/*.obs" \
+        --files                obs/RESIF_20-25.obs obs/ICGC_20-25.obs obs/IGN_20-25.obs \
+                               obs/LDG_20-25.obs obs/OMP_2016.obs obs/OMP_78-19.obs \
         --dist-thresh          15 \
         --loose-dist-thresh    30 \
         --time-thresh          2 \
@@ -27,7 +28,6 @@ Usage
 """
 
 import argparse
-import glob
 import logging
 import math
 import os
@@ -82,7 +82,7 @@ class FusionParams:
     ----------
     global_bulletin_path : str   — output path for the merged GLOBAL.obs
     main_bulletin_path   : str   — path to the reference (main) bulletin
-    folder_path          : str   — glob pattern for all source bulletins
+    files                : list  — all source bulletins, in fusion order (the main one is skipped)
     dist_thresh          : float — strict distance threshold (km)
     loose_dist_thresh    : float — loose distance threshold (km)
     time_thresh          : float — strict time threshold (s)
@@ -91,7 +91,7 @@ class FusionParams:
     """
     global_bulletin_path: str
     main_bulletin_path:   str
-    folder_path:          str
+    files:                list
     dist_thresh:          float
     loose_dist_thresh:    float
     time_thresh:          float
@@ -948,7 +948,7 @@ def fuse_bulletins(parameters, log_dir=None):
     log_path = _setup_logger(log_dir or _DEFAULT_LOG_DIR)
     logger.info(f"Log file        : {log_path}")
     logger.info(f"Main bulletin   : {parameters.main_bulletin_path}")
-    logger.info(f"Source glob     : {parameters.folder_path}")
+    logger.info(f"Sources         : {len(parameters.files)} file(s)")
     logger.info(f"Output          : {parameters.global_bulletin_path}")
     logger.info(
         f"Thresholds — strict: dist={parameters.dist_thresh} km  time={parameters.time_thresh} s  "
@@ -956,10 +956,7 @@ def fuse_bulletins(parameters, log_dir=None):
         f"mag={parameters.mag_thresh}"
     )
 
-    all_paths  = [
-        p for p in glob.glob(parameters.folder_path)
-        if p != parameters.main_bulletin_path and 'GLOBAL' not in p
-    ]
+    all_paths  = [p for p in parameters.files if p != parameters.main_bulletin_path]
     logger.info(f"Secondary bulletins to merge: {len(all_paths)}")
 
     main_lines = _generate_global(parameters)
@@ -1306,8 +1303,8 @@ def main():
     # --- fuse mode arguments ---
     parser.add_argument('--global-bulletin-path', default=None)
     parser.add_argument('--main-bulletin-path',   default=None)
-    parser.add_argument('--folder-path',          default=None,
-                        help='Glob pattern for source .obs files')
+    parser.add_argument('--files',                default=None, nargs='+',
+                        help='Source .obs files, in fusion order')
     parser.add_argument('--dist-thresh',       type=float, default=15.0)
     parser.add_argument('--loose-dist-thresh', type=float, default=30.0)
     parser.add_argument('--time-thresh',       type=float, default=2.0)
@@ -1328,7 +1325,7 @@ def main():
         params = FusionParams(
             global_bulletin_path = args.global_bulletin_path,
             main_bulletin_path   = args.main_bulletin_path,
-            folder_path          = args.folder_path,
+            files                = args.files,
             dist_thresh          = args.dist_thresh,
             loose_dist_thresh    = args.loose_dist_thresh,
             time_thresh          = args.time_thresh,

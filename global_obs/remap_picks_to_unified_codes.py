@@ -8,11 +8,11 @@ Usage
 -----
     python global_obs/remap_picks_to_unified_codes.py \
         --file-inventory stations/GLOBAL_inventory.xml \
-        --folder-bulletin "obs/*.obs"
+        --files obs/RESIF_20-25.obs obs/ICGC_20-25.obs obs/IGN_20-25.obs \
+                obs/LDG_20-25.obs obs/OMP_2016.obs obs/OMP_78-19.obs
 """
 
 import argparse
-import glob
 import logging
 import os
 import sys
@@ -61,10 +61,10 @@ class AssociatePicksParams:
     Attributes
     ----------
     file_inventory  : str — path to the STATIONXML inventory file
-    folder_bulletin : str — glob pattern for the .obs bulletin files to update
+    files           : list[str] — the .obs bulletin files to update, rewritten in place
     """
     file_inventory:  str
-    folder_bulletin: str
+    files:           list
 
 
 # ---------------------------------------------------------------------------
@@ -176,14 +176,14 @@ def remap_picks_to_unified_codes(parameters, log_dir=None):
     Returns
     -------
     dict
-        'output'    — glob pattern used (same as parameters.folder_bulletin)
+        'output'    — the files updated (same as parameters.files)
         'n_removed' — total picks removed across all files
         'n_total'   — total picks seen across all files
     """
     log_path = _setup_logger(log_dir or _DEFAULT_LOG_DIR)
     logger.info(f"Log file         : {log_path}")
     logger.info(f"Inventory        : {parameters.file_inventory}")
-    logger.info(f"Bulletin pattern : {parameters.folder_bulletin}")
+    logger.info(f"Bulletins        : {len(parameters.files)} file(s)")
 
     inventory = read_inventory(parameters.file_inventory, format='STATIONXML')
     n_stations = sum(len(net.stations) for net in inventory.networks)
@@ -195,7 +195,7 @@ def remap_picks_to_unified_codes(parameters, log_dir=None):
     total_removed = 0
     total_picks   = 0
 
-    for file_bulletin in glob.glob(parameters.folder_bulletin):
+    for file_bulletin in parameters.files:
         with open(file_bulletin, 'r', encoding='utf-8') as f:
             lines_bulletin = f.readlines()
 
@@ -231,7 +231,7 @@ def remap_picks_to_unified_codes(parameters, log_dir=None):
         f"Total: removed {total_removed}/{total_picks} picks ({total_percent:.2f}%) across all bulletins"
     )
     return {
-        'output':    parameters.folder_bulletin,
+        'output':    parameters.files,
         'n_removed': total_removed,
         'n_total':   total_picks,
     }
@@ -247,13 +247,13 @@ def main():
     )
     parser.add_argument('--file-inventory',  required=True,
                         help='Path to the STATIONXML inventory file')
-    parser.add_argument('--folder-bulletin', required=True,
-                        help='Glob pattern for .obs bulletin files (e.g. "obs/*.obs")')
+    parser.add_argument('--files', required=True, nargs='+',
+                        help='.obs bulletin files to update in place')
     args = parser.parse_args()
 
     params = AssociatePicksParams(
         file_inventory  = args.file_inventory,
-        folder_bulletin = args.folder_bulletin,
+        files           = args.files,
     )
     remap_picks_to_unified_codes(params)
 
