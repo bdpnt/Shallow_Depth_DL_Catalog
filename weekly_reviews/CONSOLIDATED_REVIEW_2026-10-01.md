@@ -1,4 +1,4 @@
-# Consolidated Review — 2026-10-01
+# Consolidated Review — 2026-10-01 (status updated 2026-10-14)
 
 ## Scope
 Every finding of the 15 weekly audits (`weekly_reviews/AUDIT_REPORT_2026-06-21.md`
@@ -11,7 +11,7 @@ fresh run**:
 - Anything wrong only because an on-disk product predates a fix is left out.
 - Latent defects (code wrong, current inputs don't trigger it) are in an appendix.
 - Figure-script defects have their own section.
-- Performance and cleanup items are dropped (they remain in the original reports).
+- Performance and cleanup items have their own section (§5).
 
 Reach was measured with read-only scripts on the **raw inputs**
 (`org_catalogs/`, `temp_picks/pick_files/`), which a fresh run consumes
@@ -20,6 +20,15 @@ comes from those checks, not from the original reports.
 
 Status tags: **still open** (unchanged since the report), **escalated**
 (measured impact higher than reported), **new** (not in any report).
+
+**2026-10-14 update.** Every finding of §1, §2 and of the 2026-10-04 /
+2026-10-11 audits (§1b) was resolved one by one and now carries a
+**Status** line: *Fixed* (with its commit on `claude`, merged in PR #49),
+*Skipped* (decision taken, reason given) or *No fix needed*. Fixing them
+uncovered two new defects, listed in §1c. The weekly audit reports were then
+deleted; they remain in git history (last version at `fa2b92f`). Their
+performance and cleanup findings, which this review had dropped, are carried
+in §5 so that nothing is lost with them.
 
 ## 1. Pipeline — breaks or corrupts on a fresh run (stage order)
 
@@ -33,6 +42,11 @@ Status tags: **still open** (unchanged since the report), **escalated**
   physically sound: e.g. ATE at 20.8 km, S 6.25 s after a 1979-06-02 origin.
   This affects the whole 1978–2019 record, which is all OMP.
   *Fix:* on P quality 4, skip only the P write and still parse S.
+  **Status: Skipped** (decision 2026-10-14). Re-measured: 42 014 S picks, but
+  these lines are mostly distant stations (median S − origin 40 s vs 18 s), so
+  only ~9 800 lie within the 80 km pick cut. A rejected P keeps rejecting its
+  line. The same `continue` on a missing P second never fires (0 lines). Also
+  noted then: S quality 4 is never filtered (62 S picks written today).
 - **[Medium] new.** Lines 225 and 261: a negative pick second is rolled back
   from the **event's** minute (`minute_p = minute - 1`) instead of the pick's
   own (`minute_p - 1`). In `OMP_78-19.mag` 21 P picks have a negative second,
@@ -42,6 +56,8 @@ Status tags: **still open** (unchanged since the report), **escalated**
   `SSST_result.obs` / `FINAL.xml`, ~55 s before the origin. The S branch
   (line 261) has the same bug but 0 occurrences in the raw files.
   *Fix:* `minute_p -= 1` / `minute_s -= 1`.
+  **Status: Fixed** (`3519e7a`). All 21 picks are of one event; the regenerated
+  bulletin differs from the old one in exactly those 21 lines.
 
 ### fetch_obs/LDG.py
 - **[Medium] new.** Lines 146-156 copy `arrtime` verbatim, and LDG's own export
@@ -54,6 +70,10 @@ Status tags: **still open** (unchanged since the report), **escalated**
   ellipsoids) and are exported to `FINAL.xml`.
   *Fix:* when a pick lies ≈ 1 day from its origin, rebuild its date from the
   origin date (or drop picks outside a sanity window).
+  **Status: Fixed** (`6f0fac3`), by rebuilding the date: a pick 1 day ± 300 s
+  after its origin is moved back one day. Exactly 93 corrected; all other LDG
+  picks lie between −5.3 s and +300 s of their origin, so no sanity window is
+  needed.
 
 ### build_global_bulletin.py · global_obs/fuse_bulletins.py
 - **[High] new.** The stage-3 file selection picks up the previous run's
@@ -70,6 +90,9 @@ Status tags: **still open** (unchanged since the report), **escalated**
   external temp picks leaking into `GLOBAL.obs` before §4.
   *Fix:* use the explicit six-source list already written out at
   `build_global_bulletin.py:131-136` for both remap and fusion.
+  **Status: Fixed** (`84fdce5`). Both take `files: list`; the list order is the
+  fusion order and keeps the old glob order (ICGC before IGN), so merged
+  locations are unchanged. Remap is still not idempotent on the six sources.
 
 ### NLL_run/reformate_obs.py · run_SSST.py
 - **[High] new.** `reformate_obs.py:140` creates `obs/nlloc_obs/GLOBAL_<N>/` with
@@ -82,6 +105,8 @@ Status tags: **still open** (unchanged since the report), **escalated**
   picks in `SSST_result.obs`.
   *Fix:* empty `outputDir` before writing, on a fresh start only
   (`iteration_start == 0`, `run_SSST.py:157`).
+  **Status: Fixed** (`678a5b5`), inside `reformate_obs()` itself, which is only
+  called on a fresh start; resumes keep their files.
 
 ### NLL_run/export_quakeml.py
 - **[High] still open** (from 2026-09-06). Line 731:
@@ -92,6 +117,7 @@ Status tags: **still open** (unchanged since the report), **escalated**
   unpack` before writing any QuakeML. (Today's `FINAL.xml`, dated 08-24, was
   written before the change that broke this line.)
   *Fix:* `for net, sta, *_ in epochs[code]`.
+  **Status: Fixed** (`8764da8`, before this pass; confirmed by the 2026-10-11 audit).
 
 ### temp_picks/convert_picks.py
 - **[Low] still open** (from 2026-07-05). Lines 459-469 (`convert_temp_oth`):
@@ -100,6 +126,49 @@ Status tags: **still open** (unchanged since the report), **escalated**
   103 of them anchored on the `0.00` placeholder. The `match_picks` residual
   band probably rejects most of them, but they should not be generated.
   *Fix:* gate the S block on `quality_p < 4 or quality_p == 9`.
+  **Status: Fixed** (`4c78ca0`): a quality-4 line is dropped whole; exactly 148
+  fewer S picks, P unchanged. The S − P `*` pairs are quality 9 and are kept.
+
+## 1b. Findings of the 2026-10-04 and 2026-10-11 audits
+
+- **`temp_picks/match_picks.py:433`** [Low] — step 6 drops unpaired `*` picks and
+  decrements `n_added` but not `n_added_near`, so the logged/returned
+  "within 20 km" count overstates. Output `.obs` unaffected.
+  **Status: Fixed** (`5548b53`).
+- **`complem_figures/error_maps.py:263-264`** [Medium in the audit] — `np.max` on
+  an empty set of medians crashes the batch when no cell reaches `_MIN_N`.
+  **Status: Fixed** (`e688c25`). Re-measured as latent: the sparsest default
+  period (1976–1980) still has up to 187 events in one ~7 km box.
+- **`complem_figures/ssst_corrections.py:697-698`** [Low] — (a) the frame pinned
+  to the grid can clip an edge station's marker; (b) a flat `--extent` gives a
+  one-node axis and an `IndexError`. **Status: Fixed** (`2921e4d`): the
+  per-station grid spans the station too; a flat `--extent` is rejected at
+  parsing.
+- **`complem_figures/depth_histogram.py:~144`** [Low] — an empty `--before-year`
+  selection draws "median = nan km". **Status: Fixed** (`e39075f`): raises.
+- **`complem_figures/seismicity_3d.py:120`** [Low] — per-row `iterrows()` +
+  `classify()`. **Status: Skipped**: measured 0.38 s on 46 k rows (not "a few
+  seconds"), and vectorizing locally would duplicate the `pyr:usable` rule of
+  `export_quakeml.classify`. Listed in §5.
+
+## 1c. New defects found while fixing (2026-10-14)
+
+- **[High] `temp_picks/convert_picks.py:485`** — every `TEMP_OTH` S was read as an
+  offset from the P, but the files are HYPO71 phase cards whose S seconds count
+  from the card's HH:MM. Each S landed late by its line's P second (median
+  ~30 s), so `match_picks` rejected nearly all of them and the rest were kept
+  with a wrong time; the S − P of the quality-9 `*` pairs was wrong too.
+  Checked three ways: same-station S times agree with OMP's own bulletin to
+  0.00 s (98.6 % within 0.5 s, vs 0.7 % before), (S − OT)/(P − OT) median 1.76
+  (vs 7.50), S − P median 2.74 s. **Status: Fixed** (`1f45273`).
+- **[Medium] `temp_picks/all_picks/PICKS_MATTHIEU/maupasacq.txt`** — a reformatted
+  copy of `maupasacq_seismotech_reprocessed.inp.txt`, identical pick for pick
+  except that P seconds ≥ 60 had been carried into the next minute without
+  adjusting the S: 5 950 S picks 60 s late. **Status: Fixed** (`7828db5`): the
+  parser now reads full HYPO71 cards (onset/polarity columns, seconds ≥ 60,
+  which used to crash `datetime()`, trailing column); `merged_other.txt` is
+  rebuilt from the original; the copy is deleted. All P picks unchanged,
+  5 876 resolved S picks −60 s.
 
 ## 2. Figure scripts — wrong on a fresh run
 
@@ -108,15 +177,19 @@ Status tags: **still open** (unchanged since the report), **escalated**
   `<root>/loc/`, which no longer exists (renamed `run/nll_loc/`). `_ZONES` is
   `{}`, so the zone overview map silently draws no zones.
   *Fix:* point it at `run/nll_loc`, and raise if nothing is found.
+  **Status: Fixed** (`4654c43`). Raises at drawing time; the map still needs
+  stage 4 outputs (`last.in` is written by NLLoc).
 
 ### complem_figures/plot_pdf_cloud_2d.py
 - **[Low] still open** (from 2026-09-13, then `plot_pdf_cloud_report.py`).
   Line 660: the `--cmap` help text says "Colormap for --color pdf", but the
   `--color` choices are `log|linear|none`.
+  **Status: Fixed** (`8ddb7fb`).
 
 ## 3. Appendix — latent defects, not triggered by current inputs
 The code is wrong, but measured on today's inputs it never fires (evidence in
-brackets). Fix them opportunistically when touching the file.
+brackets). Fix them opportunistically when touching the file. Out of scope of
+the 2026-10-14 pass, so still open unless marked.
 
 - `fuse_bulletins.py:274,511`: unbounded loops in `find_pick_lines` / `_add_phases_to_lines` [every `.obs` ends in `\n\n`]. `:687`: `mean([])` when every magnitude is NaN [0 NaN]. `:1312,1314`: CLI loose defaults 30 km / 10 s instead of 50 / 30 [the orchestrator passes 50 / 30].
 - `merge_regional_results.py:235-248`: duplicate log uses `sort_values().iloc[0]`, selection uses `idxmin` [0 ties in 2 664 duplicate groups]. `:91`: no zero-length-axis guard [0]. `:221-222`: no guard for a missing or empty zone CSV.
@@ -133,7 +206,7 @@ brackets). Fix them opportunistically when touching the file.
 - `run_zone.py:29,89`: hard-coded `_NLL_BIN`, `sys.exit` inside a library function [works on this machine].
 - `run_SSST.py:295`: `--zones` values not stripped [only bites with spaces].
 - `depth_maps.py:84`: `period_start + 4` ignores `time_range` [only 5 is used].
-- `error_maps.py:262`: crash on an all-NaN field; `pdf_metrics.py:1062,1067`: empty voxel panel [default periods populated].
+- `error_maps.py:262`: crash on an all-NaN field — **fixed** (`e688c25`, see §1b); `pdf_metrics.py:1062,1067`: empty voxel panel [default periods populated].
 - `ssst_evolution.py:49,167`: one shared `_YLIM` [plotted median/IQR lie inside it]; `:136`: log of non-positive values.
 - `plot_pdf_cloud.py:194-201`: `.hdr` not checked [all 322 980 present].
 - `plot_pdf_cloud_2d.py`: empty cloud crashes; title semi-axes mix scalings (`:520`) [only with a non-default `--confidence`]; unused `to_local` (`:337`).
@@ -141,11 +214,6 @@ brackets). Fix them opportunistically when touching the file.
 - `event_ranking.py:163,219`: log/ratio of `pdfVolume = 0` [4 in `NLL_result.csv`, none survive to SSST]; `:306,358,399`: `makedirs('')` on a bare filename; all-NaN `corr()`.
 - `temporary_network_impact.py:352,370`: `np.median` on NaN [0 all-unresolved events].
 - `network_history.py:49` vs `:279`: `PERMANENT` set wider than its legend [G/GE/IU/MN/WM codes exist but carry 0 picks].
-
-Dropped as performance or cleanup only: `run_ssst` re-copying chunks and
-`copytree`, `depth_maps` cell loop, `station_colocation` double sort, the unused
-`ref` model in `build_theoretical_tables`, dead imports and constants, stale
-comments and docstrings, missing-file messages, `parse_nll_output` chdir.
 
 ## 4. Closed since the reports
 - `fuse_bulletins` `found_possible` and match-frame performance
@@ -163,16 +231,38 @@ comments and docstrings, missing-file messages, `parse_nll_output` chdir.
 - `depth_histogram_compare` maxlike default (2026-09-27 High)
 - `event_maps` `--solution` guard on `.obs`
 - `finalize_nll_catalog.py` and `nll_phase_1.py` deleted
+- 2026-10-14: everything marked *Fixed* in §1, §1b, §1c and §2
 
-## Suggested fix order
-1. Stage-3 file selection and `nlloc_obs` cleanup — they decide whether the restart is clean.
-2. OMP and LDG parsers — before the fetch.
-3. `export_quakeml.py:731` — one line.
-4. TEMP_OTH S gating, then the figure scripts.
+## 5. Performance and cleanup — carried from the weekly audits
+Dropped from §1–3 because they change no result; copied here, re-checked open at
+`4f77bc5`, so the audit reports could be deleted. Original audit date in brackets.
+
+Performance:
+- `NLL_run/run_ssst.py:264-294` — the per-event obs chunks are rebuilt and every `.nlloc_obs` re-copied (`shutil.copy2`) on each of the up to 6 SSST iterations; they could be built once per campaign. [07-12]
+- `NLL_run/run_ssst.py:333-364` — chunk outputs are merged with `shutil.copytree(..., dirs_exist_ok=True)` then deleted; per-file `os.replace` on the same filesystem would halve the write volume. [07-12]
+- `complem_figures/depth_maps.py:118-131` — windowed-median grid built with a pure-Python double loop over ~344 000 cells, each masking the full event frame (O(cells × events)); `error_maps` and `event_ranking` already use the binned rewrite. [06-21]
+- `complem_figures/station_colocation.py:261,267` — `np.sort(pair_distances)` computed twice on ~2.9 M elements; sort once. [09-06]
+- `complem_figures/seismicity_3d.py:120` — per-row `iterrows()` + `classify()`, 0.38 s on 46 k rows. If ever worth it, vectorize *inside* `export_quakeml` so the `pyr:usable` rule stays single. [10-11]
+
+Dead code and stale text:
+- `global_obs/fuse_bulletins.py:37` — `from numpy import mean` redundant with `np`; `:34` `import sys` unused. [06-21]
+- `global_obs/remap_picks_to_unified_codes.py:18` — `import sys` unused. [06-21]
+- `temp_picks/merge_pyrenees_picks.py:26` and `NLL_run/reformate_obs.py:36` — `_PROJECT_ROOT` defined, never used. [06-21, 07-12]
+- `NLL_run/pdf_metrics.py:104` — `_GAUSS_ENTROPY_3D` defined, never used (`negentropy()` recomputes it inline). [08-23]
+- `temp_picks/build_theoretical_tables.py:46-47` — the `ref` model is computed but never enters the envelope. [consolidated]
+- `NLL_run/export_quakeml.py:160` — comment says parts are "sized to `_SPLIT_BUDGET_GB`", a constant that no longer exists; parts are `_SPLIT_YEARS` calendar spans. [08-23]
+- `NLL_run/run_ssst.py:198-212` — `_build_skeleton_conf` docstring says `INCLUDE` is re-appended per iteration; only `LOCFILES`/`LOCMETH`/`LOCCOM`/`LOCHYPOUT` are. [07-12]
+
+Error messages and robustness:
+- `temp_picks/convert_picks.py` (code-map / input open) and `temp_picks/merge_omp_picks.py:131` (`os.listdir`) — a missing input raises a raw `FileNotFoundError` instead of a clear message. [06-21]
+- `NLL_run/run_zone.py` — no pre-flight check that the NLL binaries exist; a wrong `_NLL_BIN` gives a raw traceback. [06-28]
+- `NLL_run/parse_nll_output.py:89` — `os.chdir` restored only on success (no `try/finally`); module is deprecated and uncalled. [06-21]
 
 ## Summary
-16 reports, ~85 findings re-checked:
-- **7 pipeline defects affect a fresh run:** 4 High, 2 Medium, 1 Low. Of those, 4 are new and 1 is escalated.
-- **2 figure defects**.
-- **~25 latent defects**, in the appendix.
-- **15 closed**.
+16 reports, ~85 findings re-checked on 2026-10-01; resolved on 2026-10-14:
+- **§1 pipeline (7):** 6 fixed (one before this pass), 1 skipped by decision (OMP S on P-quality-4 lines).
+- **§1b later audits (5):** 4 fixed, 1 skipped (`seismicity_3d` iterrows, moved to §5).
+- **§1c new (2):** both fixed — the `TEMP_OTH` S timing and the broken maupasacq copy.
+- **§2 figures (2):** both fixed.
+- **§3 latent (~25):** still open, one fixed in passing.
+- **§5 performance/cleanup (15):** open, carried from the deleted audit reports.
