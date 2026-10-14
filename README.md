@@ -396,7 +396,7 @@ It runs *between* the two relocations because the association test needs an even
 
 **Nine external datasets** are ingested in a fixed order, and the order encodes a precedence — `TEMP_STB` sources come after `TEMP_OMP` so that the per-event `(station, phase)` de-duplication silently drops whatever they duplicate. Each source is matched against the *previous* output, which is what makes that work, and which also means the stage **cannot be re-run** against an existing `NLL_result_augmented.obs`.
 
-The ninth, **`Pamplona_PN_picks.obs`** (`TEMP_RSB`, prob ≥ 0.5), is not produced here: it is written into `temp_picks/pick_files/` by the sibling project `../PhaseNet_Pamplona` (`python main.py export`), PhaseNet picks for the Pamplona region incl. the YK temporary stations (C015–C018, F001–F003, Oct–Dec 2020). It comes **last**, so it only fills `(station, phase)` slots no other source filled, and it must exist before `add_temp_picks.py` runs. The figures below were measured over the first eight, before it was added.
+The ninth, **`Pamplona_PN_picks.txt`** (`TEMP_RSB`, prob ≥ 0.5), is not produced here: it is written into `temp_picks/pick_files/` by the sibling project `../PhaseNet_Pamplona` (`python main.py export`), PhaseNet picks for the Pamplona region incl. the YK temporary stations (C015–C018, F001–F003, Oct–Dec 2020). It comes **last**, so it only fills `(station, phase)` slots no other source filled, and it must exist before `add_temp_picks.py` runs. The figures below were measured over the first eight, before it was added.
 
 Measured across the eight sources:
 
