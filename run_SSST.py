@@ -25,10 +25,10 @@ LOC2SSST_CORES parallel processes):
      goes: once iteration i's Loc2ssst has written ssst_corr<i>/, the set
      it read (run/ssst_time/Pyrenees_<N>/ at i = 0, ssst_corr<i-1>/
      afterwards) is deleted, so at most two grid sets are ever on disk.
-     Only the last set survives, fully materialized (resume input on a
-     partial campaign, reusable final SSST model on a finished one).
-  5. Safety-net cleanup (_cleanup_zone_grids): the same end state for a
-     campaign whose earlier iterations ran before the rolling cleanup.
+  5. End-of-zone cleanup (_cleanup_zone_grids): on a finished zone the last
+     set is deleted too, so no grid outlives its zone (--keep-grid keeps it
+     as a reusable final SSST model). On a partial campaign it is kept,
+     fully materialized, as the resume input.
 
 After all zones complete (all final CSVs present):
   6. Merges the zone CSVs into RESULT/SSST_result.csv (zone-overlap
@@ -45,6 +45,7 @@ Usage
     python run_SSST.py --zones 1,2       # only these zones
     python run_SSST.py --iteration-stop 2   # partial campaign (iterations 0-2)
     python run_SSST.py --iteration-start 3  # resume (prep + grids are reused)
+    python run_SSST.py --keep-grid       # keep each zone's final SSST grids
     python run_SSST.py --decaff          # let the machine idle-sleep
 
 Unless --decaff is given, the machine is kept awake (caffeinate) for the run.
@@ -110,21 +111,23 @@ def _final_csv(key):
                         f'Pyrenees_{key}.sum.grid0.loc.csv')
 
 
-def _cleanup_zone_grids(key, iteration_start):
+def _cleanup_zone_grids(key, iteration_start, finished, keep_grid):
     """Delete the zone's travel-time grids once they are no longer used.
 
-    run_ssst() already does this iteration by iteration, so on a campaign
-    run entirely with it this finds a single, materialized set and nothing
-    to do. It still matters on a resume of a campaign started before that
-    rolling cleanup existed, where earlier ssst_corr sets and symlink
-    chains are left over.
+    run_ssst() already retires them iteration by iteration, leaving a
+    single, materialized set: the last ssst_corr<i>/.
 
-    The LAST ssst_corr set is always kept — it is the resume input of the
-    next iteration on a partial campaign, and the reusable final SSST model
-    (e.g. to relocate extra events) on a finished one. Its symlinks
-    (stations without a correction, resolving into the earlier grid sets)
-    are first replaced by real copies, then the earlier ssst_corr sets are
-    removed.
+    On a finished zone (final relocation done) nothing reads that set any
+    more - the merge, pdf_metrics.py and the figures all work from the
+    loc_ssst_corr<i>/ locations - so it is deleted too (30-70 GB per zone),
+    unless keep_grid asks to keep it as a reusable final SSST model (e.g. to
+    relocate extra events).
+
+    On a partial campaign the LAST ssst_corr set is always kept: it is the
+    resume input of the next iteration. Its symlinks (stations without a
+    correction, resolving into the earlier grid sets, left by a campaign
+    started before the rolling cleanup existed) are first replaced by real
+    copies, then the earlier ssst_corr sets are removed.
 
     The initial grids (run/ssst_time/Pyrenees_<key>/) are only read by a
     fresh start (iteration_start == 0): build_grids() builds them and
@@ -140,7 +143,12 @@ def _cleanup_zone_grids(key, iteration_start):
                                'ssst_corr*')),
         key=lambda path: int(path.rsplit('ssst_corr', 1)[1]))
 
-    if corr_dirs:
+    if finished and not keep_grid:
+        for corr_dir in corr_dirs:
+            shutil.rmtree(corr_dir)
+        print(f'[zone {key}] Final grids deleted ({len(corr_dirs)} set(s)); '
+              f'rerun with --keep-grid to keep them')
+    elif corr_dirs:
         kept = corr_dirs[-1]
         for root, _, files in os.walk(kept):
             for name in files:
@@ -157,7 +165,8 @@ def _cleanup_zone_grids(key, iteration_start):
                       ignore_errors=True)
 
 
-def _process_zone(key, item, iteration_start, iteration_stop, rebuild_grids):
+def _process_zone(key, item, iteration_start, iteration_stop, rebuild_grids,
+                  keep_grid):
     zone_label = f'zone {key}'
     (lat_min, lon_min), (lat_max, lon_max) = item
 
@@ -225,7 +234,9 @@ def _process_zone(key, item, iteration_start, iteration_stop, rebuild_grids):
                       iteration_stop=iteration_stop)
 
     # free the zone's travel-time grids before the next zone starts
-    _cleanup_zone_grids(key, iteration_start)
+    _cleanup_zone_grids(key, iteration_start,
+                        finished=result['next_iteration'] is None,
+                        keep_grid=keep_grid)
 
     return result
 
@@ -235,7 +246,7 @@ def _process_zone(key, item, iteration_start, iteration_stop, rebuild_grids):
 # ---------------------------------------------------------------------------
 
 def run_pipeline(zones=None, iteration_start=0, iteration_stop=None,
-                 rebuild_grids=False):
+                 rebuild_grids=False, keep_grid=False):
     """Run the SSST stage for the given zones (default: all, sequentially)."""
     bulletin = os.path.join(_OBS, 'NLL_result_augmented.obs')
     if not os.path.isfile(bulletin):
@@ -245,7 +256,7 @@ def run_pipeline(zones=None, iteration_start=0, iteration_stop=None,
     zone_keys = zones or list(_ZONES)
     for key in zone_keys:
         _process_zone(key, _ZONES[key], iteration_start, iteration_stop,
-                      rebuild_grids)
+                      rebuild_grids, keep_grid)
 
     # --- finalize only once every zone's final relocation exists (partial
     # campaigns / per-zone runs skip this until the last piece is done)
@@ -300,6 +311,9 @@ def main():
                              'final NLLoc-only relocation)')
     parser.add_argument('--rebuild-grids', action='store_true',
                         help='Rebuild the P/S grids even when they exist')
+    parser.add_argument('--keep-grid', action='store_true',
+                        help='Keep each finished zone\'s final SSST grid set '
+                             '(deleted by default once the zone is done)')
     parser.add_argument('--decaff', action='store_true',
                         help='Do not keep the machine awake with caffeinate')
     args = parser.parse_args()
@@ -316,7 +330,8 @@ def main():
     run_pipeline(zones=zones,
                  iteration_start=args.iteration_start,
                  iteration_stop=args.iteration_stop,
-                 rebuild_grids=args.rebuild_grids)
+                 rebuild_grids=args.rebuild_grids,
+                 keep_grid=args.keep_grid)
 
 
 if __name__ == '__main__':
