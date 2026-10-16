@@ -1,4 +1,4 @@
-"""
+r"""
 error_maps.py
 ============================
 Windowed-median maps of the horizontal (ERH) and vertical (ERV) location error,
@@ -20,7 +20,7 @@ placed at the PDF expectation (`expect_lat` / `expect_lon`), the point where
 the published errors are evaluated.
 
 Pages are drawn at their printed size (`--width-cm`, default 16 cm =
-`\\linewidth` of an A4 page with 2.5 cm margins) with 7-9 pt fonts, at the
+`\linewidth` of an A4 page with 2.5 cm margins) with 7-9 pt fonts, at the
 true geographic aspect, one shared colour bar to the right. National borders
 and shorelines are drawn *under* the data, from the same GMT database as the
 PyGMT maps, through the `.xy` caches of `basemap_lines.py`; `--no-borders` /
@@ -31,11 +31,11 @@ Without them the figure is drawn as before, with a warning. Writes both a
 
 Usage
 -----
-    python complem_figures/error_maps.py \\
+    python complem_figures/error_maps.py \
         --file RESULT/NLL_result.csv --map-folder complem_figures/error_maps/ --time-range 5
 
-    python complem_figures/error_maps.py \\
-        --file RESULT/SSST_result.csv --start 2020 --end 2025 \\
+    python complem_figures/error_maps.py \
+        --file RESULT/SSST_result.csv --start 2020 --end 2025 \
         --output complem_figures/error_maps_ssst/2020-2025.png
 """
 
