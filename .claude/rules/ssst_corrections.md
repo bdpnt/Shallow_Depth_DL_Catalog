@@ -1,0 +1,29 @@
+---
+paths:
+  - "complem_figures/ssst_corrections.py"
+---
+
+# `complem_figures/ssst_corrections.py`
+
+- `ssst_corrections.py` — reconstructs and maps the SSST travel-time corrections themselves. The `.ssst` grids Loc2ssst wrote are deleted by `run_SSST.py`'s own cleanup, so the field is recomputed from the surviving per-event `.hyp` locations with Loc2ssst's own formula (`corr = Σ res·w / Σ w`, `w = exp(−d²/L²) + floor`, **d measured event-to-grid-node, not to the station**). `res = obs − pred` and the correction is *added* to the predicted time, so red = arrivals later than the 1-D model predicts. Each iteration is an increment; the final grids carry their sum. Outputs to `complem_figures/ssst_corrections/`:
+  - `<run>_station_atlas.pdf` — one page per station×phase field (300 with ≥100 usable arrivals): five increments (9999→50→15→5→1 km, panels a–e) + cumulative total (f), 3 rows × 2 at printed width with a one-line header, depth-slice maps on a shared diverging scale, unsupported nodes greyed. A station in two zones is drawn in its better-sampled one — the zones ran separate Loc2ssst passes, so their fields are independent.
+  - `<run>_spread_map.pdf` — catalog-wide map of the **across-station** spread of the total correction per event (P only). A correction common to all of an event's stations is absorbed by the origin time and cannot move the hypocentre, so the dispersion — not the mean — is the part that *can* relocate. **Not an impact map**: against the pure SSST displacement (iteration-0 vs final location, same picks) ρ = +0.10, or +0.20 given Nphs; median displacement rises only 0.95 → 1.27 km across the whole spread range. What moves a hypocentre is the *azimuthal pattern* of the differential correction, which a std discards. Nphs suppresses the marginal ρ (spread ρ = +0.42 with Nphs, displacement ρ = −0.18) — the same confound as RMS vs ERH in `pdf_metrics.py`. For reference the pure SSST displacement has median 1.09 km, p90 4.74 km.
+
+  **Nothing is interpolated between map nodes** — one flat `pcolormesh` cell per independently evaluated node; the smoothness on the page is the Gaussian kernel itself. So node spacing is a real constraint: the 0.02° default is ~2.2 km lat / ~1.6 km lon at 43°N, which **undersamples the L = 1 km panel**. The 300-page atlas keeps it coarse on purpose (213 s); use `--stations FR.0041:P --map-spacing 0.005` (~55 s/page, writes `*_station_atlas_selection.pdf`) for pages that go on a slide. `--product page --station CA.0051:S` writes one such page on its own, header-less, as `<run>_<STA>_<PHASE>.png/.pdf` on the shared −2.25..3.5 / 41.75..43.75 frame.
+
+  `--extent=lon0,lon1,lat0,lat1` (the `=` form is required when lon0 is negative) draws every page on one shared frame so pages can be compared, clipped to each zone's `LSGRID` — read from `run/ssst/run_<N>_SSST.in`, since off that box Loc2ssst computed nothing. Default frames each page on its own station's events and the station itself, which is tighter but not comparable page to page. A flat `--extent` (lon0 ≥ lon1 or lat0 ≥ lat1) is rejected at parsing.
+
+  **`--depth` defaults to each station's own median event depth**, not a fixed value. The kernel is 3-D, so a slice `dz` off the event mass damps every event by `exp(−dz²/L²)` — negligible at L = 15 km, fatal at L = 1 km. A fixed 10 km slice against a catalog median of 6.6–7.3 km cut `FR.0041`'s median summed weight in the finest panel from 5.7 to 2.0. Pass `--depth` only to put several stations on a common plane.
+
+  - `<run>_displacement_map.pdf` — **the impact map**: each event's iteration-0 hypocentre vs its final one (same picks, same parameters, only the corrected grids differ; matched by `publicId`), so the difference is the corrections alone. Median distance moved + arrows of the median horizontal displacement per 0.25° cell, and a signed median depth change (red = deeper). 53 754 events, median move 1.33 km, p90 6.85 km — ~1 km through the dense central network but **3–4 km at the western and eastern margins**.
+
+  Both catalog-wide maps share `windowed_median_map`: a **median** over a circular window (longitude scaled by `cos(lat)`), because displacement is heavy-tailed (max 99.5 km) and a mean lets single events paint neighbourhoods.
+
+  ```bash
+  python complem_figures/ssst_corrections.py                 # all three, ~7 min
+  python complem_figures/ssst_corrections.py --product displacement
+  python complem_figures/ssst_corrections.py --extract-only  # fill the cache only
+  ```
+  Parsing the ~276 k per-event `.hyp` files takes ~100 s, cached as `.npz` per (zone, iteration) in `run/ssst_corrections_cache/` (33 MB) — **delete it after a new campaign**, the cache keys on (zone, iteration) and not on the run that produced them. The parser prefix-matches `HYPOCENTER` / `GEOGRAPHIC` and ignores everything else, so the `MAXIMUM_LIKELIHOOD` line added under `SAVE_NLLOC_EXPECTATION` passes straight through; the source positions it reads become the expectations, which is right — Loc2ssst reads the same line and used the same points. **Validated against the binary**: Loc2ssst re-run on zone 6 (`FR.0047`, P and S) agrees node-by-node over all 303×313×40 nodes to 0.0000 ms at L=9999 and 0.0736 ms at L=1, against ±0.36 s amplitudes; its own "163 accepted" matches the module's LSPHSTAT selection exactly. Omitting `LOCFILES` from the control file is what keeps that check cheap — `ihave_time_input_grids = flag_out_grid * flag_nlloc_outfile` (`Loc2ssst.c:590`), so Loc2ssst writes the correction grid and skips the travel-time grids, needing no Grid2Time rebuild.
+
+  Note when reading the figures: increments are **not** monotonically decreasing — they peak at L = 15 km, the scale where the residual field has real spatial structure. And LSPHSTAT admits only a subset of the catalog: 23 727 events at iteration 0, rising to 34 674 by the final relocation.
