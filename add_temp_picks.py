@@ -60,13 +60,19 @@ _STB_OMP_PQ     = os.path.join(_PICKS_MARC_DIR, 'OMP-picks.pq')
 _STB_OROGENX_PQ = os.path.join(_PICKS_MARC_DIR, 'orogenx-renass74-bp4_40.pq')
 _STB_PYROPE_PQ  = os.path.join(_PICKS_MARC_DIR, 'pyrope-renass74-bp4_40.pq')
 
+# SANIMS experiment bulletin (ICTJA/SeisComP, 2019-09 → 2020-11), manual picks.
+_SANIMS_XML = os.path.join(_TEMP_PICKS, 'all_picks', 'SANIMS', 'Bulletin_Sanims.xml')
+
 # Ordered list of (input_file, format) for conversion, then matching.
+# SANIMS comes first so its manual analyst picks win any (station, phase)
+# slot over the machine-picked sources below.
 # TEMP_STB entries are placed after TEMP_OMP so that, if OMP-picks.pq
 # duplicates picks already ingested via merge_omp_picks.py/TEMP_OMP,
 # match_picks.py's per-event (station_code, phase) dedup silently skips them.
 # Pamplona_PN_picks comes last so it only fills (station, phase) slots that
 # no other source filled.
 _PICKS_TO_CONVERT = [
+    (_SANIMS_XML,    'TEMP_QML'),
     (_VIEHLA_OBS,    'TEMP_OBS'),
     (_PYRENEES_TXT,  'TEMP_RSB'),
     (_PYRENEES2_TXT, 'TEMP_RSB'),

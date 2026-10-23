@@ -16,6 +16,8 @@ Usage
     python temp_picks/convert_picks.py --input temp_picks/pick_files/merged_other.txt --format TEMP_OTH
     python temp_picks/convert_picks.py --input temp_picks/all_picks/PICKS_MARC/OMP-picks.pq \
         --format TEMP_STB --output temp_picks/pick_files/OMP-picks_converted.obs
+    python temp_picks/convert_picks.py --input temp_picks/all_picks/SANIMS/Bulletin_Sanims.xml \
+        --format TEMP_QML --output temp_picks/pick_files/Bulletin_Sanims_converted.obs
 
 Supported formats
 -----------------
@@ -35,6 +37,12 @@ Supported formats
                dataset's root directory; --output should be given explicitly, since the
                default naming would otherwise land inside the gitignored source directory
                instead of temp_picks/pick_files/.
+    TEMP_QML : QuakeML 1.2 bulletin (e.g. the SANIMS experiment, ICTJA/SeisComP).
+               Only manual picks are kept, and picks whose arrival in the preferred
+               origin has timeWeight 0 (analyst-rejected) are dropped. The picks'
+               own time uncertainties are ignored in favour of the project's
+               0.05 s P / 0.15 s S. --output should be given explicitly, as for
+               TEMP_STB.
 
 Adding a new format
 -------------------
@@ -59,16 +67,20 @@ import glob
 import logging
 import os
 import re
-from collections import Counter
+from collections import Counter, namedtuple
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+from lxml import etree
+from obspy import UTCDateTime
 
 logger = logging.getLogger('convert_picks')
 
 DEFAULT_MIN_PHASE_SCORE = 0.5     # mirrors merge_omp_picks.py / merge_pyrenees_picks.py
 ROW_BASED_FORMATS = {'TEMP_STB'}  # formats read from a directory of row-oriented files
                                   # (parquet) instead of opened as a text file line-by-line
+QUAKEML_FORMATS   = {'TEMP_QML'}  # formats read as a QuakeML 1.2 file, pick by pick
+_QML_NS           = '{http://quakeml.org/xmlns/bed/1.2}'
 
 
 # ---------------------------------------------------------------------------
@@ -542,6 +554,33 @@ def convert_temp_stb(row, code_map, skipped_stations=None, fallback_counter=None
                              instrument=instrument)
 
 
+def convert_temp_qml(row, code_map, skipped_stations=None, fallback_counter=None):
+    """
+    Convert a single QuakeML pick to GLOBAL.obs format.
+
+    row is a QmlPick built by _convert_quakeml (station_id "NETWORK.STATION",
+    phase_type, phase_time as a datetime), already filtered to manual,
+    non-zero-weight picks. Pick uncertainty: 0.05 s for P, 0.15 s for S, the
+    project convention, whatever uncertainty the source declares.
+    """
+    network, short_name = row.station_id.split('.', 1)
+
+    dt          = row.phase_time
+    phase       = row.phase_type
+    date        = dt.strftime('%Y%m%d')
+    hhmm        = dt.strftime('%H%M')
+    seconds_str = f"{dt.second + dt.microsecond / 1e6:.3f}"
+    error_str   = '0.05' if phase == 'P' else '0.15'
+
+    internal_code = resolve_station(short_name, date, code_map, fallback_counter, network=network)
+    if internal_code is None:
+        if skipped_stations is not None:
+            skipped_stations[short_name] += 1
+        return None
+
+    return _format_pick_line(internal_code, phase, date, hhmm, seconds_str, error_str, 'TEMP_QML')
+
+
 # ---------------------------------------------------------------------------
 # Format dispatch table — register new format handlers here
 # ---------------------------------------------------------------------------
@@ -552,6 +591,7 @@ FORMAT_HANDLERS = {
     'TEMP_OMP': convert_temp_omp,
     'TEMP_OTH': convert_temp_oth,
     'TEMP_STB': convert_temp_stb,
+    'TEMP_QML': convert_temp_qml,
 }
 
 
@@ -593,6 +633,58 @@ def _convert_parquet_dir(input_dir, output_path, fmt_handler, code_map,
                     n_converted += 1
 
     return n_input, n_converted, n_skipped, n_dropped_low_score
+
+
+# ---------------------------------------------------------------------------
+# QuakeML reader — used for formats in QUAKEML_FORMATS
+# ---------------------------------------------------------------------------
+
+QmlPick = namedtuple('QmlPick', 'station_id phase_type phase_time')
+
+
+def _convert_quakeml(input_path, output_path, fmt_handler, code_map,
+                     skipped_stations, fallback_counter):
+    """
+    Walk a QuakeML 1.2 file one event at a time (flat memory), drop automatic
+    picks and picks whose arrival in the preferred origin has timeWeight 0,
+    convert the rest pick by pick and stream them to output_path.
+    """
+    n_input = n_converted = n_skipped = n_dropped = 0
+
+    with open(output_path, 'w') as out_f:
+        for _, event in etree.iterparse(input_path, tag=_QML_NS + 'event'):
+            preferred = event.findtext(_QML_NS + 'preferredOriginID')
+            rejected  = set()
+            for origin in event.iterfind(_QML_NS + 'origin'):
+                if origin.get('publicID') != preferred:
+                    continue
+                for arrival in origin.iterfind(_QML_NS + 'arrival'):
+                    weight = arrival.findtext(_QML_NS + 'timeWeight')
+                    if weight is not None and float(weight) == 0.0:
+                        rejected.add(arrival.findtext(_QML_NS + 'pickID'))
+
+            for pick in event.iterfind(_QML_NS + 'pick'):
+                n_input += 1
+                if (pick.findtext(_QML_NS + 'evaluationMode') != 'manual'
+                        or pick.get('publicID') in rejected):
+                    n_dropped += 1
+                    continue
+                wid = pick.find(_QML_NS + 'waveformID')
+                row = QmlPick(
+                    station_id = f"{wid.get('networkCode')}.{wid.get('stationCode')}",
+                    phase_type = pick.findtext(_QML_NS + 'phaseHint'),
+                    phase_time = UTCDateTime(pick.findtext(f'{_QML_NS}time/{_QML_NS}value')).datetime,
+                )
+                result = fmt_handler(row, code_map, skipped_stations, fallback_counter)
+                if result is None:
+                    n_skipped += 1
+                else:
+                    out_f.write(result + '\n')
+                    n_converted += 1
+
+            event.clear()
+
+    return n_input, n_converted, n_skipped, n_dropped
 
 
 # ---------------------------------------------------------------------------
@@ -695,6 +787,10 @@ def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=N
             score_threshold, skipped_stations, fallback_counter,
             instrument='*' if relative_timing else '?',
         )
+    elif fmt in QUAKEML_FORMATS:
+        n_input, n_converted, n_skipped, n_dropped_qml = _convert_quakeml(
+            input_path, output_path, fmt_handler, code_map, skipped_stations, fallback_counter,
+        )
     else:
         converted = []
         n_input   = 0
@@ -729,6 +825,8 @@ def convert_file(input_path, fmt, output_path=None, codemap_path=None, log_dir=N
     logger.info(f"Skipped          : {n_skipped}")
     if fmt in ROW_BASED_FORMATS:
         logger.info(f"Rows dropped (low phase_score) : {n_dropped_low_score}")
+    if fmt in QUAKEML_FORMATS:
+        logger.info(f"Picks dropped (automatic or timeWeight 0) : {n_dropped_qml}")
     logger.info(f"Output           : {output_path}")
     if skipped_stations:
         summary = ', '.join(f"{s} ({n})" for s, n in sorted(skipped_stations.items()))
