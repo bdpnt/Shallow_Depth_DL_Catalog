@@ -32,6 +32,7 @@ Seven stages, each with an orchestrator script. Per-stage detail (parameters, me
 Figures and diagnostics: `complem_figures/` → `complem_figures.md` (and `ssst_corrections.md`).
 
 ### Cross-cutting conventions
+- Python coding conventions (module layout, logging, public API + CLI, return dicts): `.claude/rules/python_patterns.md`, loaded when any `.py` file is touched.
 - `PUBLIC_ID PYRENEES_%06d`, assigned in stage 3 in chronological order, is the join key of every later stage.
 - **Published hypocentres are the location-PDF expectation, not the maximum-likelihood point** (`LOCHYPOUT ... SAVE_NLLOC_EXPECTATION`): `latitude`/`longitude`/`depth` in `RESULT/*.csv` equal `expect_*`, and RMS/Gap/Dist/origin time are re-evaluated there. The ML point is kept as `maxlike_*`. Every `complem_figures` reader defaults to the expectation; `--solution maxlike` switches.
 - Pick uncertainty is assigned, not measured: **0.05 s P / 0.15 s S** everywhere (fetch, `LOCQUAL2ERR`, added picks).
