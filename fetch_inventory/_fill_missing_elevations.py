@@ -2,7 +2,7 @@
 _fill_missing_elevations.py
 ============================
 Fill in missing (zero) elevations in a station CSV by querying the
-Open-Elevation API.
+EU-DEM 25 m model through the OpenTopoData API.
 
 Usage
 -----
@@ -28,14 +28,15 @@ logger = logging.getLogger(__name__)
 
 def _get_elevation(lat, lng):
     """
-    Query the Open-Elevation API and return the elevation in metres.
+    Query the EU-DEM 25 m model (OpenTopoData) and return the elevation in metres.
 
-    Returns 0 on any error (API failure or network issue).
+    Returns 0 on any error (API failure, network issue, or a point outside the
+    model, e.g. at sea). OpenTopoData's public API allows 1 call/s and 1 000 calls/day.
     """
-    url = f"https://api.open-elevation.com/api/v1/lookup?locations={lat},{lng}"
+    url = f"https://api.opentopodata.org/v1/eudem25m?locations={lat},{lng}"
     try:
         response = requests.get(url, timeout=10).json()
-        if 'results' in response:
+        if response.get('status') == 'OK' and response['results'][0]['elevation'] is not None:
             return int(response['results'][0]['elevation'])
         logger.warning(f"API error for ({lat}, {lng}): {response}")
         return 0
@@ -50,7 +51,7 @@ def _get_elevation(lat, lng):
 
 def check_elevation(file, file_save):
     """
-    Fill missing elevations (value 0) in a station CSV via Open-Elevation.
+    Fill missing elevations (value 0) in a station CSV via EU-DEM.
 
     Parameters
     ----------
@@ -90,7 +91,7 @@ def check_elevation(file, file_save):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Fill missing elevations in a station CSV via Open-Elevation API.'
+        description='Fill missing elevations in a station CSV via the EU-DEM 25 m model (OpenTopoData).'
     )
     parser.add_argument('--file', required=True, help='Input station CSV')
     parser.add_argument('--save', required=True, help='Output CSV path')
