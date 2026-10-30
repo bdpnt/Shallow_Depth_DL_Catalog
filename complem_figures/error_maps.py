@@ -26,7 +26,12 @@ and shorelines are drawn *under* the data, from the same GMT database as the
 PyGMT maps, through the `.xy` caches of `basemap_lines.py`; `--no-borders` /
 `--no-coastlines` turn them off. The caches must be dumped once, in an
 environment with GMT: `conda run -n pygmt_env python complem_figures/basemap_lines.py --dump`.
-Without them the figure is drawn as before, with a warning. Writes both a
+Without them the figure is drawn as before, with a warning. A light grey
+hillshade of `earth_relief_15s` (sea in very pale blue) is drawn under the
+grid from the same dump's `relief_15s.npz`; `--no-dem` turns it off. With the
+relief the error cells are opaque (0.9 alpha without), because `rocket_r` and
+the hillshade both encode lightness: the relief shows only where cells are
+masked. Writes both a
 300 dpi PNG and a vector PDF (`pdf.fonttype = 42`).
 
 Usage
@@ -53,9 +58,9 @@ import pandas as pd  # noqa: E402
 import seaborn as sns  # noqa: E402  (rocket_r colormap)
 
 try:                                                    # noqa: E402
-    from complem_figures.basemap_lines import draw_basemap_lines
+    from complem_figures.basemap_lines import draw_basemap_lines, draw_relief
 except ImportError:                                     # run as a script
-    from basemap_lines import draw_basemap_lines
+    from basemap_lines import draw_basemap_lines, draw_relief
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -94,6 +99,7 @@ class ErrorMapsParams:
     borders:    bool = True
     coastlines: bool = True
     basemap_resolution: str = 'i'
+    dem:        bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -233,10 +239,13 @@ def plot_period(events, fig_save, parameters):
         ax = fig.add_axes([left / width, y / height, map_w / width, map_h / height])
         ax.set_axisbelow(True)
         ax.grid(color=_GRID, linewidth=0.4)
+        # opaque cells over the relief: rocket_r and the hillshade both encode
+        # lightness, so the relief must not show through the error colours
+        relief = parameters.dem and draw_relief(ax, verbose=(k == 0))
         median = windowed_median(events, column)
         mesh = ax.pcolormesh(lon_edges, lat_edges, np.ma.masked_invalid(median),
                              vmin=_VMIN, vmax=_VMAX, cmap=cmap, shading='auto',
-                             alpha=0.9, rasterized=True)
+                             alpha=1.0 if relief else 0.9, rasterized=True)
         ax.scatter(events['longitude'], events['latitude'], s=0.08, c='black',
                    linewidths=0, rasterized=True)
         draw_basemap_lines(ax, borders=parameters.borders,
@@ -346,6 +355,8 @@ def main():
                         help='do not draw the shorelines')
     parser.add_argument('--basemap-resolution', default='i', choices=['c', 'l', 'i', 'h', 'f'],
                         help='which basemap_lines.py cache to read (default: i)')
+    parser.add_argument('--no-dem', action='store_true',
+                        help='do not draw the shaded relief under the error cells')
     args = parser.parse_args()
     if (args.start is None) != (args.end is None):
         parser.error('--start and --end go together')
@@ -355,7 +366,8 @@ def main():
                                     figSave=args.output, width_cm=args.width_cm,
                                     borders=not args.no_borders,
                                     coastlines=not args.no_coastlines,
-                                    basemap_resolution=args.basemap_resolution))
+                                    basemap_resolution=args.basemap_resolution,
+                                    dem=not args.no_dem))
 
 
 if __name__ == '__main__':

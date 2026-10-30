@@ -34,3 +34,4 @@ test.ipynb
 temp_picks/all_picks/
 *.xy
 *.history
+complem_figures/basemap/*.npz
