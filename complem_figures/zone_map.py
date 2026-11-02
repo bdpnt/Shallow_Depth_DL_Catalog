@@ -14,6 +14,11 @@ A quality filter (erh ≤ 3 km, erv ≤ 3 km, gap ≤ 300°, rms ≤ 0.5 s) is
 applied by default; use --no-filter to skip it (e.g. for pre-relocation .obs
 files where erh/erv are not available).
 
+The basemap is the light grey hillshade of `basemap_lines.draw_relief_pygmt`,
+with zone colours dark enough to read on it; `--no-dem` restores the flat grey
+land, blue sea and the original pale BrBG zone colours. Events above sea level
+are magenta, events deeper than 15 km black.
+
 Usage
 -----
     # Zones only (no seismicity)
@@ -42,6 +47,12 @@ from typing import Optional
 
 import pandas as pd
 import pygmt as pg
+
+try:
+    from complem_figures.basemap_lines import (ABOVE_SEA_COLOR, PYGMT_SHORELINE,
+                                               draw_relief_pygmt)
+except ImportError:                                     # run as a script
+    from basemap_lines import ABOVE_SEA_COLOR, PYGMT_SHORELINE, draw_relief_pygmt
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -102,7 +113,12 @@ def _load_zones(loc_dir):
 _LOC_DIR = os.path.join(_PROJECT_ROOT, 'run', 'nll_loc')
 _ZONES   = _load_zones(_LOC_DIR)
 
+# On the light relief: dark enough to read, no magenta (events above sea level)
 _ZONE_COLORS = [
+    "#8c510a", "#d95f02", "#7570b3", "#66a61e", "#e6ab02", "#01665e"
+]
+# On the flat dark grey land of --no-dem (zones 3 and 4 vanish on the relief)
+_ZONE_COLORS_FLAT = [
     "#8c510a", "#d8b365", "#f6e8c3", "#c7eae5", "#5ab4ac", "#01665e"
 ]
 
@@ -117,6 +133,7 @@ class ZoneMapParams:
     fileBulletin: Optional[str]  = None  # .obs file; if None, no seismicity overlay
     no_filter:    bool           = False
     map_region:   Optional[list] = None  # [lon_min, lon_max, lat_min, lat_max]
+    dem:          bool           = True  # shaded relief instead of flat land / sea
 
 
 # ---------------------------------------------------------------------------
@@ -167,10 +184,16 @@ def generate_figure(parameters):
     fig = pg.Figure()
     with pg.config(MAP_FRAME_TYPE='fancy+'):
         fig.basemap(region=region, projection='M6i', frame='af')
-    fig.coast(water='skyblue', land='#777777', resolution='i',
-              area_thresh='0/0/1', borders='1/0.75p,black')
+    if parameters.dem:
+        draw_relief_pygmt(fig, region)
+        fig.coast(shorelines=PYGMT_SHORELINE, resolution='i',
+                  area_thresh='0/0/1', borders='1/0.75p,black')
+    else:
+        fig.coast(water='skyblue', land='#777777', resolution='i',
+                  area_thresh='0/0/1', borders='1/0.75p,black')
 
-    for (zone_id, boxes), color in zip(_ZONES.items(), _ZONE_COLORS):
+    colors = _ZONE_COLORS if parameters.dem else _ZONE_COLORS_FLAT
+    for (zone_id, boxes), color in zip(_ZONES.items(), colors):
         sw_out, ne_out = boxes["outer"]
         sw_in,  ne_in  = boxes["inner"]
 
@@ -204,7 +227,8 @@ def generate_figure(parameters):
         if not parameters.no_filter:
             events_df = _remove_high_err(events_df)
 
-        pg.makecpt(cmap='viridis', series=[0, 15, 1], reverse=True)
+        with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
+            pg.makecpt(cmap='viridis', series=[0, 15, 1], reverse=True)
         fig.plot(
             x=events_df.Longitude,
             y=events_df.Latitude,
@@ -213,7 +237,7 @@ def generate_figure(parameters):
             cmap=True,
             transparency=15,
         )
-        fig.colorbar(frame=['a5f5+lDepth [km] (events above 15 are in black)'])
+        fig.colorbar(frame=['a5f5+lDepth [km] (deeper than 15 in black, above sea level in magenta)'])
 
     os.makedirs(os.path.dirname(parameters.figSave), exist_ok=True)
     fig.savefig(parameters.figSave, dpi=300)
@@ -240,6 +264,9 @@ def main():
                         metavar=('LON_MIN', 'LON_MAX', 'LAT_MIN', 'LAT_MAX'),
                         default=None,
                         help='Map extent (default: -5 6 40.5 45.5)')
+    parser.add_argument('--no-dem', action='store_true',
+                        help='Flat grey land and blue sea (and the original zone colours) '
+                             'instead of the shaded relief')
     args = parser.parse_args()
 
     generate_figure(ZoneMapParams(
@@ -247,6 +274,7 @@ def main():
         fileBulletin = args.bulletin,
         no_filter    = args.no_filter,
         map_region   = args.map_region,
+        dem          = not args.no_dem,
     ))
 
 

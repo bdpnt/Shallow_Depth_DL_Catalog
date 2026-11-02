@@ -19,6 +19,9 @@ basemap, `viridis` reversed 0-15 km, `0.03 cm x Mag` symbols), with:
   in `mag_model/` are converted to ML LDG in memory, as
   `global_obs/apply_magnitude_models.py` does; already harmonised bulletins
   pass through unchanged;
+* the light grey hillshade of `basemap_lines.draw_relief_pygmt` under the
+  events (`--no-dem`: the original flat grey land and blue sea), and events
+  above sea level in magenta, shown by the colour bar's left triangle;
 * both a 300 dpi PNG and a vector PDF.
 
 Usage
@@ -39,6 +42,12 @@ from typing import Optional
 
 import pandas as pd
 import pygmt as pg
+
+try:
+    from complem_figures.basemap_lines import (ABOVE_SEA_COLOR, PYGMT_SHORELINE,
+                                               draw_relief_pygmt)
+except ImportError:                                     # run as a script
+    from basemap_lines import ABOVE_SEA_COLOR, PYGMT_SHORELINE, draw_relief_pygmt
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -73,6 +82,7 @@ class SourceDepthMapsParams:
     font_annot:    str   = '8p'
     font_label:    str   = '9p'
     font_tag:      str   = '11p'
+    dem:           bool  = True    # shaded relief instead of flat land / sea
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +187,8 @@ def generate_figure(parameters):
     )
 
     cpt = os.path.join(_PROJECT_ROOT, '.source_depth_maps.cpt')
-    pg.makecpt(cmap='viridis', series=[0, parameters.max_depth, 1], reverse=True, output=cpt)
+    with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
+        pg.makecpt(cmap='viridis', series=[0, parameters.max_depth, 1], reverse=True, output=cpt)
 
     fig = pg.Figure()
     fig.shift_origin(xshift='1c', yshift='2c')
@@ -187,8 +198,13 @@ def generate_figure(parameters):
             fig.shift_origin(xshift=f'{panel_w + parameters.gap_cm:.4f}c')
         fig.basemap(region=region, projection=proj,
                     frame=['WSne' if i == 0 else 'wSne', 'xa1f0.5', 'ya1f0.5'])
-        fig.coast(water='skyblue', land='#777777', resolution='i',
-                  area_thresh='0/0/1', borders='1/0.5p,black')
+        if parameters.dem:
+            draw_relief_pygmt(fig, region, proj)
+            fig.coast(shorelines=PYGMT_SHORELINE, resolution='i',
+                      area_thresh='0/0/1', borders='1/0.5p,black')
+        else:
+            fig.coast(water='skyblue', land='#777777', resolution='i',
+                      area_thresh='0/0/1', borders='1/0.5p,black')
         fig.plot(x=df.Longitude, y=df.Latitude, style='cc',
                  size=_sizes(df.Magnitude, scale),
                  fill=df.Depth, cmap=cpt, transparency=30)
@@ -197,11 +213,12 @@ def generate_figure(parameters):
             fig.text(text=tag, position='TL', justify='TL', offset='0.2c/-0.15c',
                      font=f'{parameters.font_tag},Helvetica-Bold,black')
 
-    # one colour bar under both panels; the triangle shows the colour of events deeper than max_depth
+    # one colour bar under both panels; the triangles show the colours of events
+    # above sea level (left) and deeper than max_depth (right)
     fig.shift_origin(xshift=f'{-(panel_w + parameters.gap_cm):.4f}c')
     centre = (2 * panel_w + parameters.gap_cm) / 2
     fig.colorbar(cmap=cpt,
-                 position=f'x{centre:.4f}c/-0.85c+w{0.6 * parameters.width_cm:.3f}c/0.22c+h+jTC+ef',
+                 position=f'x{centre:.4f}c/-0.85c+w{0.6 * parameters.width_cm:.3f}c/0.22c+h+jTC+e',
                  frame=['xa5f1+lDepth (km)'])
 
     base, _ = os.path.splitext(parameters.figSave)
@@ -247,6 +264,8 @@ def main():
                         help='Colour-bar saturation depth in km (default: 15)')
     parser.add_argument('--no-convert-mags', action='store_true',
                         help='Keep source magnitudes (skip the in-memory ML LDG conversion)')
+    parser.add_argument('--no-dem', action='store_true',
+                        help='Flat grey land and blue sea instead of the shaded relief')
     args = parser.parse_args()
 
     generate_figure(SourceDepthMapsParams(
@@ -254,7 +273,7 @@ def main():
         left_tag=args.left_tag or None, right_tag=args.right_tag or None,
         map_region=args.map_region, width_cm=args.width_cm,
         size_factor=args.size_factor, max_depth=args.max_depth,
-        convert_mags=not args.no_convert_mags,
+        convert_mags=not args.no_convert_mags, dem=not args.no_dem,
     ))
 
 

@@ -5,7 +5,8 @@ Generate a PyGMT map of seismic stations in the Pyrénées.
 
 Reads station locations from a StationXML inventory (FDSN format) and plots
 each station as an inverted triangle on a Pyrénées basemap. No station labels
-are shown.
+are shown. The basemap is the light grey hillshade of
+`basemap_lines.draw_relief_pygmt`; `--no-dem` restores flat grey land and blue sea.
 
 Usage
 -----
@@ -21,6 +22,11 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import pygmt as pg
+
+try:
+    from complem_figures.basemap_lines import PYGMT_SHORELINE, draw_relief_pygmt
+except ImportError:                                     # run as a script
+    from basemap_lines import PYGMT_SHORELINE, draw_relief_pygmt
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +45,7 @@ _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 class StationMapParams:
     fileInventory: str
     figSave:       str
+    dem:           bool = True    # shaded relief instead of flat land / sea
 
 
 # ---------------------------------------------------------------------------
@@ -91,8 +98,13 @@ def generate_figure(parameters):
     fig = pg.Figure()
     with pg.config(MAP_FRAME_TYPE='fancy+'):
         fig.basemap(region=region, projection='M6i', frame='af')
-    fig.coast(water='skyblue', land='#777777', resolution='i',
-              area_thresh='0/0/1', borders='1/0.75p,black')
+    if parameters.dem:
+        draw_relief_pygmt(fig, region)
+        fig.coast(shorelines=PYGMT_SHORELINE, resolution='i',
+                  area_thresh='0/0/1', borders='1/0.75p,black')
+    else:
+        fig.coast(water='skyblue', land='#777777', resolution='i',
+                  area_thresh='0/0/1', borders='1/0.75p,black')
 
     if other:
         fig.plot(x=[s['lon'] for s in other], y=[s['lat'] for s in other],
@@ -134,11 +146,14 @@ def main():
                         help='Input StationXML inventory file')
     parser.add_argument('--output', required=True,
                         help='Output figure path (PNG or PDF)')
+    parser.add_argument('--no-dem', action='store_true',
+                        help='Flat grey land and blue sea instead of the shaded relief')
     args = parser.parse_args()
 
     generate_figure(StationMapParams(
         fileInventory = args.inventory,
         figSave       = args.output,
+        dem           = not args.no_dem,
     ))
 
 

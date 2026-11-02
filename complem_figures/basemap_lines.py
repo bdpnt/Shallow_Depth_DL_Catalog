@@ -39,6 +39,11 @@ the DEM's <= 0 m, not the GMT shoreline: fine for the Pyrenees, but low land
 (polders, deltas) would turn blue elsewhere.  15'' smooths the peaks (highest
 pixel 3 254 m, Aneto 3 404 m), irrelevant for a background.
 
+The PyGMT maps get the same hillshade from `draw_relief_pygmt`, which needs no
+cache: it reads `earth_relief` straight from GMT (15'', or 03'' for a map less
+than 1.5 deg across) and replaces the land / water fills of `fig.coast`, so
+the caller then draws the coast without fills (`PYGMT_SHORELINE` for the line).
+
 Usage in a figure script
 ------------------------
     from basemap_lines import draw_basemap_lines
@@ -46,6 +51,8 @@ Usage in a figure script
     draw_basemap_lines(ax, coastlines=False)     # borders only
     draw_basemap_lines(ax, zorder=5, casing=True)  # on top of the data instead
     draw_relief(ax)                              # hillshade under the grid
+
+    draw_relief_pygmt(fig, region, projection)   # PyGMT, before fig.coast
 """
 
 import argparse
@@ -101,6 +108,13 @@ RELIEF_ZORDER     = 0.4
 RELIEF_SEA_COLOR  = '#F0F6FB'
 RELIEF_GREY_MIN   = 0.72      # darkest grey of the hillshade
 RELIEF_VERT_EXAG  = 2
+PYGMT_SHORELINE   = f'{COAST_LW}p,{COAST_COLOR}'   # coast line once the fills are gone
+
+# Depth maps: events above sea level (depth < 0) used to fall on GMT's white
+# background colour, invisible on the relief.  `makecpt(reverse=True)` swaps
+# background and foreground, so set them crossed:
+#   with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):
+ABOVE_SEA_COLOR   = '#C51B7D'
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +282,7 @@ def draw_relief(ax, resolution=RELIEF_RESOLUTION, zorder=RELIEF_ZORDER, verbose=
     Nothing is drawn (and a warning is printed) when the cache is missing.
     Returns True when the relief was drawn.
     """
-    from matplotlib.colors import LightSource, to_rgb
+    from matplotlib.colors import to_rgb
 
     relief = load_relief(resolution)
     if relief is None:
@@ -278,15 +292,9 @@ def draw_relief(ax, resolution=RELIEF_RESOLUTION, zorder=RELIEF_ZORDER, verbose=
                   f'  conda run -n pygmt_env python complem_figures/basemap_lines.py --dump')
         return False
     z, lon, lat = relief
-    z   = z.astype(float)
-    sea = z <= 0
-    z[sea] = 0                                   # flat sea: no bathymetry texture
+    grey, sea = _relief_grey(z, lon, lat)
     dlon, dlat = lon[1] - lon[0], lat[1] - lat[0]
-    dx = np.deg2rad(dlon) * 6371e3 * np.cos(np.deg2rad(lat.mean()))
-    dy = np.deg2rad(dlat) * 6371e3
-    shade = LightSource(azdeg=315, altdeg=45).hillshade(
-        z, vert_exag=RELIEF_VERT_EXAG, dx=dx, dy=dy)
-    rgb = np.repeat((RELIEF_GREY_MIN + (1 - RELIEF_GREY_MIN) * shade)[..., None], 3, axis=2)
+    rgb = np.repeat(grey[..., None], 3, axis=2)
     rgb[sea] = to_rgb(RELIEF_SEA_COLOR)
     # imshow would reset the limits to the relief's extent: keep the caller's
     xlim, ylim = ax.get_xlim(), ax.get_ylim()
@@ -297,6 +305,61 @@ def draw_relief(ax, resolution=RELIEF_RESOLUTION, zorder=RELIEF_ZORDER, verbose=
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
     return True
+
+
+def draw_relief_pygmt(fig, region, projection=None):
+    """
+    Draw the same light grey hillshade (sea very pale blue) on a PyGMT figure,
+    in place of `fig.coast`'s land / water fills: call it before `fig.coast`,
+    then draw the coast without fills.
+
+    `region` is [W, E, S, N]; `projection` defaults to the figure's current one.
+    The grid is read from GMT's `earth_relief` (03'' under 1.5 deg, else 15'').
+    """
+    import tempfile
+
+    from pygmt.datasets import load_earth_relief
+
+    w, e, s, n = (float(v) for v in region[:4])
+    span = max(e - w, n - s)
+    pad  = 0.05 * span
+    grid = load_earth_relief('03s' if span < 1.5 else '15s',
+                             region=[w - pad, e + pad, s - pad, n + pad])
+    grey, sea = _relief_grey(grid.values, grid.lon.values, grid.lat.values)
+    grey[sea] = 0.0                              # below the land ramp -> sea colour
+
+    sea_rgb = '/'.join(str(int(RELIEF_SEA_COLOR[i:i + 2], 16)) for i in (1, 3, 5))
+    g0 = round(RELIEF_GREY_MIN * 255)
+    with tempfile.NamedTemporaryFile('w', suffix='.cpt', delete=False) as f:
+        f.write(f'0 {sea_rgb} {RELIEF_GREY_MIN} {sea_rgb}\n'
+                f'{RELIEF_GREY_MIN} {g0} 1 255\nB {sea_rgb}\nF 255\nN {sea_rgb}\n')
+        cpt = f.name
+    kw = {'region': region, 'projection': projection} if projection else {}
+    try:
+        fig.grdimage(grid=grid.copy(data=grey.astype('float32')), cmap=cpt, **kw)
+    finally:
+        os.remove(cpt)
+    return True
+
+
+def _relief_grey(z, lon, lat):
+    """
+    Hillshade of a relief grid as greys in [RELIEF_GREY_MIN, 1], and the sea
+    mask (z <= 0, flattened so it carries no bathymetry texture).
+    """
+    from matplotlib.colors import LightSource
+
+    z   = np.asarray(z, dtype=float).copy()
+    sea = z <= 0
+    z[sea] = 0
+    dx = np.deg2rad(abs(lon[1] - lon[0])) * 6371e3 * np.cos(np.deg2rad(np.mean(lat)))
+    dy = np.deg2rad(abs(lat[1] - lat[0])) * 6371e3
+    # LightSource takes row 0 as north; a grid starting in the south is flipped
+    # around it, or the NW light comes from the SW and valleys read as ridges
+    flip  = slice(None, None, -1) if lat[0] < lat[-1] else slice(None)
+    shade = LightSource(azdeg=315, altdeg=45).hillshade(
+        z[flip], vert_exag=RELIEF_VERT_EXAG, dx=dx, dy=dy)[flip]
+    return RELIEF_GREY_MIN + (1 - RELIEF_GREY_MIN) * shade, sea
 
 
 # ---------------------------------------------------------------------------

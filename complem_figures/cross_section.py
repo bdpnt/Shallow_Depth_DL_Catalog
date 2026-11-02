@@ -5,7 +5,8 @@ Generate a planimetric map and vertical cross-section for a seismic zone.
 
 Plots seismic events coloured by depth on a PyGMT basemap with fault traces
 and station positions, then projects events onto a user-defined cross-section
-line and plots the depth profile below the map.
+line and plots the depth profile below the map. The map sits on the light grey
+hillshade of `basemap_lines.draw_relief_pygmt` (03'' at this scale).
 
 Catalogue formats
 -----------------
@@ -71,8 +72,12 @@ import numpy as np
 import pandas as pd
 import pygmt
 import xarray as xr
-from pygmt.datasets import load_earth_relief
 from scipy.ndimage import gaussian_filter
+
+try:
+    from complem_figures.basemap_lines import draw_relief_pygmt
+except ImportError:                                     # run as a script
+    from basemap_lines import draw_relief_pygmt
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -352,10 +357,8 @@ def generate_figure(parameters):
 
     if parameters.draw_map:
         fig.basemap(region=Region, projection='M6i', frame='a')
-        fig.coast(shorelines=True, water='lightblue', land='lightgray', resolution='h')
-
-        grid = load_earth_relief('03s', region=Region)
-        fig.grdimage(grid=-grid, cmap='gray')
+        draw_relief_pygmt(fig, Region)
+        fig.coast(shorelines=True, resolution='h')
 
         failles_dir = os.path.join(_PROJECT_ROOT, 'failles')
         fig.plot(os.path.join(failles_dir, 'FNP.dat'),

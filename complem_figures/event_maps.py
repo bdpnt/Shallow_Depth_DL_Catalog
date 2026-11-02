@@ -8,6 +8,11 @@ events, and plots each event on a Pyrenees basemap coloured by depth.
 Optionally overlays station positions, zone-boundary rectangles and
 cross-section profiles. Writes both a 300 dpi PNG and a vector PDF.
 
+The basemap is the light grey hillshade of `basemap_lines.draw_relief_pygmt`
+(sea very pale blue); `--no-dem` restores the flat grey land and blue sea.
+Events above sea level are magenta (formerly GMT's white background colour,
+invisible on the relief), events deeper than `--max-depth` black.
+
 Quality filter (erh ≤ 3 km, erv ≤ 3 km, gap ≤ 300°, rms ≤ 0.5 s) is applied
 by default. Use --no-filter to skip it (e.g. for pre-relocation .obs files
 where erh/erv are not available).
@@ -72,6 +77,12 @@ from typing import List, Optional, Tuple
 
 import pandas as pd
 
+try:
+    from complem_figures.basemap_lines import (ABOVE_SEA_COLOR, PYGMT_SHORELINE,
+                                               draw_relief_pygmt)
+except ImportError:                                     # run as a script
+    from basemap_lines import ABOVE_SEA_COLOR, PYGMT_SHORELINE, draw_relief_pygmt
+
 # ---------------------------------------------------------------------------
 # Module paths
 # ---------------------------------------------------------------------------
@@ -115,6 +126,7 @@ class EventMapsParams:
     profiles:      List[Tuple[float, float, float, float, float]] = field(default_factory=list)
     axis_pen:      str             = '0.9p,red'
     box_pen:       str             = '0.4p,red,3p_2p'
+    dem:           bool            = True       # shaded relief instead of flat land / sea
 
 
 # ---------------------------------------------------------------------------
@@ -264,8 +276,13 @@ def generate_figure(parameters):
     fig = pg.Figure()
     with pg.config(MAP_FRAME_TYPE='fancy+'):
         fig.basemap(region=region, projection='M6i', frame='af')
-    fig.coast(water='skyblue', land='#777777', resolution='i',
-              area_thresh='0/0/1', borders='1/0.75p,black')
+    if parameters.dem:
+        draw_relief_pygmt(fig, region)
+        fig.coast(shorelines=PYGMT_SHORELINE, resolution='i',
+                  area_thresh='0/0/1', borders='1/0.75p,black')
+    else:
+        fig.coast(water='skyblue', land='#777777', resolution='i',
+                  area_thresh='0/0/1', borders='1/0.75p,black')
 
     if parameters.region_out:
         ro = parameters.region_out
@@ -291,7 +308,8 @@ def generate_figure(parameters):
         fig.plot(x=stations.Longitude, y=stations.Latitude,
                  style='i0.1c', fill='black', transparency=40)
 
-    pg.makecpt(cmap='viridis', series=[0, parameters.max_depth, 1], reverse=True)
+    with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
+        pg.makecpt(cmap='viridis', series=[0, parameters.max_depth, 1], reverse=True)
     fig.plot(
         x=events_df.Longitude,
         y=events_df.Latitude,
@@ -311,7 +329,8 @@ def generate_figure(parameters):
     label  = {'expect': 'Expectation depth', 'maxlike': 'Max-likelihood depth'}[
         parameters.solution] if is_csv else 'Depth'
     fig.colorbar(frame=[f'a5f5+l{label} [km] '
-                        f'(events above {parameters.max_depth:g} are in black)'])
+                        f'(deeper than {parameters.max_depth:g} in black, '
+                        f'above sea level in magenta)'])
 
     base, _  = os.path.splitext(parameters.figSave)
     outputs  = []
@@ -372,6 +391,8 @@ def main():
                         help='GMT pen for the swath outline; the dash pattern is given in '
                              'absolute points (dash_gap), not as "--", so it does not scale '
                              'with the pen width (default: 0.4p,red,3p_2p)')
+    parser.add_argument('--no-dem', action='store_true',
+                        help='Flat grey land and blue sea instead of the shaded relief')
     args = parser.parse_args()
 
     ri = args.region_in
@@ -394,6 +415,7 @@ def main():
         profiles      = profiles,
         axis_pen      = args.axis_pen,
         box_pen       = args.box_pen,
+        dem           = not args.no_dem,
     ))
 
 

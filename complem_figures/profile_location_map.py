@@ -21,6 +21,11 @@ the same flag. Defaults: PDF expectation (`--solution expect`) and no quality
 filter — the published
 hypocentre, see CLAUDE.md §4.
 
+Both maps sit on the light grey hillshade of `basemap_lines.draw_relief_pygmt`
+(it replaced the former opt-in `--relief GRID`); `--no-dem` restores the flat
+grey land and blue sea. Events above sea level are magenta, shown by the colour
+bar's top triangle.
+
 Usage (pygmt_env, from the repository root)
 -------------------------------------------
     conda run -n pygmt_env python complem_figures/profile_location_map.py \\
@@ -46,6 +51,11 @@ import pygmt as pg
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
+from complem_figures.basemap_lines import (  # noqa: E402
+    ABOVE_SEA_COLOR,
+    PYGMT_SHORELINE,
+    draw_relief_pygmt,
+)
 from complem_figures.event_maps import (  # noqa: E402
     EventMapsParams,
     REPORT_REGION as PYRENEES_REGION,
@@ -107,19 +117,18 @@ def generate_figure(args):
     # -- Main map ------------------------------------------------------------
     with pg.config(MAP_FRAME_TYPE='fancy+', FONT_ANNOT_PRIMARY='8p'):
         fig.basemap(region=region, projection=proj, frame=['WSne', 'af'])
-    if args.relief:
-        pg.makecpt(cmap='gray', series=[-3000, 3500], output=_tmp('relief.cpt'))
-        fig.grdimage(grid=args.relief, cmap=_tmp('relief.cpt'), shading=True,
-                     transparency=40)
-        fig.coast(water='skyblue', resolution='i', area_thresh='0/0/1',
-                  borders='1/0.75p,black')
+    if not args.no_dem:
+        draw_relief_pygmt(fig, region)
+        fig.coast(shorelines=PYGMT_SHORELINE, resolution='i',
+                  area_thresh='0/0/1', borders='1/0.75p,black')
     else:
         fig.coast(water='skyblue', land='#9A9A9A', resolution='i',
                   area_thresh='0/0/1', borders='1/0.75p,black')
 
     depth_cpt = _tmp('depth.cpt')
-    pg.makecpt(cmap='viridis', series=[0, args.max_depth, 1], reverse=True,
-               output=depth_cpt)
+    with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
+        pg.makecpt(cmap='viridis', series=[0, args.max_depth, 1], reverse=True,
+                   output=depth_cpt)
     fig.plot(x=in_frame.Longitude, y=in_frame.Latitude, style=f'c{args.dot_size}c',
              fill=in_frame.Depth, cmap=depth_cpt, transparency=15)
 
@@ -150,16 +159,24 @@ def generate_figure(args):
         fig.basemap(map_scale='jBL+w25k+o0.4c/0.5c+f+lkm')
     label = 'Expectation depth' if args.solution == 'expect' else 'Max-likelihood depth'
     with pg.config(FONT_ANNOT_PRIMARY='8p', FONT_LABEL='8p'):
-        fig.colorbar(cmap=depth_cpt, position='JMR+o0.4c/0c+w6c/0.3c+ef',
+        # triangles: above sea level (top) and deeper than max_depth (bottom)
+        fig.colorbar(cmap=depth_cpt, position='JMR+o0.4c/0c+w6c/0.3c+e',
                      frame=[f'a5f1+l{label} [km]'])
 
     # -- Inset: the whole range, frame of the main map in red ----------------
     if not args.no_inset:
         with fig.inset(position=f'j{args.inset_corner}+w{args.inset_width_cm}c+o0.15c',
                        box='+gwhite+p0.6p,black'):
-            fig.coast(region=PYRENEES_REGION, projection=f'M{args.inset_width_cm}c',
-                      water='skyblue', land='#C8C8C8', resolution='i',
-                      area_thresh='0/0/1', borders='1/0.4p,black', frame='+n')
+            inset_proj = f'M{args.inset_width_cm}c'
+            if not args.no_dem:
+                draw_relief_pygmt(fig, PYRENEES_REGION, inset_proj)
+                fig.coast(region=PYRENEES_REGION, projection=inset_proj,
+                          shorelines=PYGMT_SHORELINE, resolution='i',
+                          area_thresh='0/0/1', borders='1/0.4p,black', frame='+n')
+            else:
+                fig.coast(region=PYRENEES_REGION, projection=inset_proj,
+                          water='skyblue', land='#C8C8C8', resolution='i',
+                          area_thresh='0/0/1', borders='1/0.4p,black', frame='+n')
             fig.plot(x=events.Longitude, y=events.Latitude, style='c0.008c',
                      fill='gray25', transparency=30)
             fig.plot(x=[lon_min, lon_max, lon_max, lon_min, lon_min],
@@ -206,8 +223,8 @@ def main():
                    help='Colour-bar saturation depth in km (default: 15)')
     p.add_argument('--dot-size', type=float, default=0.035,
                    help='Epicentre symbol diameter in cm (default: 0.035)')
-    p.add_argument('--relief', default=None,
-                   help='Shaded relief under the seismicity, e.g. @earth_relief_15s (default: none)')
+    p.add_argument('--no-dem', action='store_true',
+                   help='Flat grey land and blue sea instead of the shaded relief')
     p.add_argument('--no-towns', action='store_true', help='Do not draw the orientation towns')
     p.add_argument('--no-inset', action='store_true', help='Do not draw the whole-range inset')
     p.add_argument('--inset-corner', default='TL', choices=['TL', 'TR', 'BL', 'BR'],

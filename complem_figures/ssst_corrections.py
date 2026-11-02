@@ -90,6 +90,12 @@ smoothing length and, on the right, its arrival count and rms. Atlas pages
 carry a one-line header (station, phase, zone, depth slice, node spacing); the
 single page has none - that belongs in the caption.
 
+The single page, the displacement map and the spread map sit on the light grey
+hillshade of `basemap_lines.draw_relief` (masked nodes show the relief instead
+of flat grey); `--no-dem` turns it off. The atlas keeps the flat grey: one
+relief image per panel takes a page from ~76 KB to ~1.1 MB, i.e. the 300-page
+atlas from ~7 MB to ~300 MB.
+
 Drawing note
 ------------
 Nothing is interpolated between map nodes: pcolormesh draws one flat cell per
@@ -111,6 +117,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.spatial import cKDTree
+
+try:
+    from complem_figures.basemap_lines import draw_relief
+except ImportError:                                     # run as a script
+    from basemap_lines import draw_relief
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -186,6 +197,7 @@ class SsstCorrParams:
     extent:      tuple = None   # (lon0, lon1, lat0, lat1); None = per-station
     product:     str   = 'all'   # atlas | spread | displacement | all | page
     width_cm:    float = 16.0    # printed width of an atlas / single page
+    dem:         bool  = True    # relief under page / displacement / spread (never the atlas)
 
 
 # ---------------------------------------------------------------------------
@@ -689,7 +701,7 @@ def _style():
     })
 
 
-def _draw(ax, lats, lons, values, mask, vmax, sta_lat, sta_lon):
+def _draw(ax, lats, lons, values, mask, vmax, sta_lat, sta_lon, relief=False):
     # rasterized: 300 pages x 6 vector meshes is a ~90 MB PDF, ~7 MB rasterized,
     # and the meshes carry no detail that survives as vectors anyway
     mesh = ax.pcolormesh(lons, lats, np.ma.masked_where(mask, values), cmap='RdBu_r',
@@ -700,14 +712,18 @@ def _draw(ax, lats, lons, values, mask, vmax, sta_lat, sta_lon):
     ax.set_aspect(1.0 / np.cos(np.deg2rad(float(np.mean(lats)))))
     ax.set_xlim(lons[0] - 0.5 * (lons[1] - lons[0]), lons[-1] + 0.5 * (lons[1] - lons[0]))
     ax.set_ylim(lats[0] - 0.5 * (lats[1] - lats[0]), lats[-1] + 0.5 * (lats[1] - lats[0]))
+    if relief:
+        draw_relief(ax, verbose=False)
     return mesh
 
 
-def station_page(fields, sta_lat, sta_lon, width_cm=16.0, header=None):
+def station_page(fields, sta_lat, sta_lon, width_cm=16.0, header=None, relief=False):
     """
     Five increments + cumulative, 3 rows x 2 columns, drawn at printed size
     (`width_cm`). `header` adds a one-line strip on top (the atlas pages carry
     one; the single-page product leaves identification to the caption).
+    `relief` lays the shaded relief under every map (single page only: the
+    atlas would grow ~40x).
 
     Returns the matplotlib Figure; the caller saves and closes it.
     """
@@ -756,7 +772,8 @@ def station_page(fields, sta_lat, sta_lon, width_cm=16.0, header=None):
         ax = fig.add_axes(rect(row, col))
         axes.append(ax)
         if k < 5:
-            mesh_inc = _draw(ax, lats, lons, increments[k], masks[k], vmax_inc, sta_lat, sta_lon)
+            mesh_inc = _draw(ax, lats, lons, increments[k], masks[k], vmax_inc, sta_lat, sta_lon,
+                             relief)
             char_dist = _CHAR_DISTS[k]
             label = 'L = 9999 km (static)' if char_dist > 1000 else f'L = {char_dist:g} km'
             rms = (float(np.sqrt((np.asarray(increments[k])[~masks[k]] ** 2).mean()))
@@ -765,7 +782,7 @@ def station_page(fields, sta_lat, sta_lon, width_cm=16.0, header=None):
             right_txt = f'{n_arr} arrivals, rms {rms * 1000:.0f} ms'
         else:
             mesh_tot = _draw(ax, lats, lons, fields['total'], fields['outside'],
-                             vmax_tot, sta_lat, sta_lon)
+                             vmax_tot, sta_lat, sta_lon, relief)
             label, right_txt = 'Cumulative (final grids)', ''
         ax.set_title(f'$\\bf{{{tags[k]}}}$   {label}', loc='left', pad=3)
         if right_txt:
@@ -853,7 +870,7 @@ def make_page(params, station, phase, zone=None, path=None):
     sta_lat, sta_lon = read_station_latlon(zone).get(station, (np.nan, np.nan))
 
     path = path or os.path.join(params.fig_dir, f'{params.run_name}_{station}_{phase}.png')
-    fig  = station_page(fields, sta_lat, sta_lon, params.width_cm)
+    fig  = station_page(fields, sta_lat, sta_lon, params.width_cm, relief=params.dem)
     base, _ = os.path.splitext(path)
     outputs = []
     for out in (f'{base}.png', f'{base}.pdf'):
@@ -1065,6 +1082,8 @@ def make_displacement_map(params, cache, path):
         ax.set_facecolor('0.92')
         ax.set_aspect(aspect)
         ax.set_ylabel('latitude (deg)')
+        if params.dem:
+            draw_relief(ax, verbose=False)
     axes[1].set_xlabel('longitude (deg)')   # top panel's would land on its note
     fig.tight_layout()
     fig.savefig(path)
@@ -1098,6 +1117,8 @@ def make_spread_map(params, cache, path):
                          cmap='viridis', shading='flat', vmin=vmin, vmax=vmax)
     ax.set_facecolor('0.92')
     ax.set_aspect(1.0 / np.cos(np.deg2rad(float(np.mean(lat)))))
+    if params.dem:
+        draw_relief(ax, verbose=False)
     ax.set_xlabel('longitude (deg)')
     ax.set_ylabel('latitude (deg)')
     ax.set_title('SSST correction: across-station spread of the total applied '
@@ -1177,6 +1198,9 @@ def main():
                    help='printed page width, i.e. your \\linewidth in cm (default: 16)')
     p.add_argument('--extract-only', action='store_true',
                    help='fill the parse cache and stop')
+    p.add_argument('--no-dem', action='store_true',
+                   help='flat grey instead of the shaded relief under the single page, '
+                        'displacement and spread maps (the atlas never has it)')
     args = p.parse_args()
     if args.extent and args.extent != 'auto':
         bounds = [float(v) for v in args.extent.split(',')]
@@ -1195,6 +1219,7 @@ def main():
                 if args.extent and args.extent != 'auto' else None),
         product=args.product,
         width_cm=args.width_cm,
+        dem=not args.no_dem,
     )
     if params.product == 'page':
         station, _, phase = (args.station or '').partition(':')

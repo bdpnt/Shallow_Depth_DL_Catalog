@@ -1,11 +1,13 @@
 import pygmt
 import numpy as np
-from pygmt.datasets import load_earth_relief
 from datetime import datetime
 from math import cos, sin, radians
 import os
+import sys
 import xarray as xr
 from scipy.ndimage import gaussian_filter
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from complem_figures.basemap_lines import draw_relief_pygmt
 
 # Parameters
 use_err = 'erh' # erv or erh
@@ -172,11 +174,9 @@ erh = erh[mask]
 # ---------------------------
 fig = pygmt.Figure()
 fig.basemap(region = Region, projection="M6i", frame="a")
-fig.coast(shorelines=True, water="lightblue", land="lightgray", resolution="h")
-
 # Relief
-grid = load_earth_relief("03s", region=Region)
-fig.grdimage(grid=-grid, cmap="gray")
+draw_relief_pygmt(fig, Region)
+fig.coast(shorelines=True, resolution="h")
 
 # Failles
 fig.plot("../failles/FNP.dat", pen="1.25p", style="f1c/0.25c", fill="black")
