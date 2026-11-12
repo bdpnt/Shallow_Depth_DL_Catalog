@@ -53,7 +53,9 @@ Figures and diagnostics: `complem_figures/` → `complem_figures.md` (and `ssst_
 
 > **Environments**: `seisbench_env` is the project default — the whole pipeline (`build_global_inventory.py` → `run_SSST.py`) runs in it unprefixed. `pygmt_env` is the only exception, for the modules importing PyGMT or `xarray`.
 > - `seisbench_env` → `generate_complem_figures.py` (Gutenberg-Richter, depth maps, error maps)
-> - `pygmt_env`     → `generate_complem_maps.py` (event maps for each zone and final catalog), `cross_section.py`, `cross_section_panels.py`, `profile_location_map.py`, `aoi_map.py`, `source_depth_maps.py`, and the two `build_global_bulletin.py` steps it launches itself via `conda run` (`filter_events_by_aoi.py`, `plot_global_catalog_map.py`)
+> - `pygmt_env`     → `generate_complem_maps.py` (event maps for each zone and final catalog), `cross_section.py`, `cross_section_panels.py`, `profile_location_map.py`, `aoi_map.py`, `source_depth_maps.py`, `station_map.py`, and the two `build_global_bulletin.py` steps it launches itself via `conda run` (`filter_events_by_aoi.py`, `plot_global_catalog_map.py`)
+>
+> ⚠ **In Claude's shell, `conda run -n pygmt_env python` resolves to `seisbench_env`'s Python** (`which python` → `/opt/miniconda3/envs/seisbench_env/bin/python`) and fails with `No module named 'pygmt'`. Call the interpreter by path instead: `/opt/miniconda3/envs/pygmt_env/bin/python <script>`. Not checked in the user's own terminal, nor for the `conda run` calls inside `build_global_bulletin.py`.
 
 ---
 
