@@ -179,11 +179,11 @@ draw_relief_pygmt(fig, Region)
 fig.coast(shorelines=True, resolution="h")
 
 # Failles
-fig.plot("../failles/FNP.dat", pen="1.25p", style="f1c/0.25c", fill="black")
-fig.plot("../failles/structures_lacan.dat", pen="1.25p", style="f1c/0.25c", fill="black")
-# fig.plot("../failles/failles_neotectonic.xy", pen="1.25p", style="f1c/0.25c", fill="red")
-fig.plot("../failles/lacan.thrust", pen="1.25p", style="f1c/0.25c", fill="blue")
-fig.plot("../failles/lacan.other", pen="1.25p", style="f1c/0.25c", fill="blue")
+fig.plot("../faults/FNP.dat", pen="1.25p", style="f1c/0.25c", fill="black")
+fig.plot("../faults/structures_lacan.dat", pen="1.25p", style="f1c/0.25c", fill="black")
+# fig.plot("../faults/failles_neotectonic.xy", pen="1.25p", style="f1c/0.25c", fill="red")
+fig.plot("../faults/lacan.thrust", pen="1.25p", style="f1c/0.25c", fill="blue")
+fig.plot("../faults/lacan.other", pen="1.25p", style="f1c/0.25c", fill="blue")
 
 
 # Trace de la coupe

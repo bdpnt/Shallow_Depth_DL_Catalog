@@ -360,7 +360,7 @@ def generate_figure(parameters):
         draw_relief_pygmt(fig, Region)
         fig.coast(shorelines=True, resolution='h')
 
-        failles_dir = os.path.join(_PROJECT_ROOT, 'failles')
+        failles_dir = os.path.join(_PROJECT_ROOT, 'faults')
         fig.plot(os.path.join(failles_dir, 'FNP.dat'),
                  pen='1.25p', style='f1c/0.25c', fill='black')
         fig.plot(os.path.join(failles_dir, 'structures_lacan.dat'),
