@@ -15,7 +15,7 @@ Scripts in `complem_figures/` for visualization and statistics. Most figures are
 - `profile_location_map.py` — location map of cross-section profiles (labelled X–X′, towns, whole-range inset), reusing `event_maps`' reader and profile geometry
 - `aoi_map.py` — the AOI half-planes of `global_obs/filter_events_by_aoi.py` over the already-filtered RESIF and IGN+ICGC epicentres of `obs/`; read-only, never re-filters a bulletin
 - `source_depth_maps.py` — two source bulletins side by side (IGN / LDG by default), coloured by depth and sized by magnitude
-- `network_history.py` — seismicity per year, stations seen per year, and the temporary deployments on one time axis. `--mag_version` drops the deployment panel and adds a top panel: `true_erz` of every M ≥ 4 event (63; magnitude from the `--obs` event lines, the CSV `Mamp`/`Mdur` being placeholders), log axis → `network_history_mag.png`
+- `network_history.py` — seismicity per year, stations seen per year, and the temporary deployments on one time axis. `--mag_version` drops the deployment panel and adds a top panel: `true_erz` of every M ≥ 4 event (63; magnitude from the `--obs` event lines, the CSV `Mamp`/`Mdur` being placeholders), log axis, no large-N guide bands → `network_history_mag.png`
 - `magnitude_regression.py` — the three magnitude-conversion regressions of `global_obs/generate_magnitude_models.py` as one three-panel figure; needs the pre-conversion header tables (`--extract-from` once, from the archived bulletins)
 - `gutenberg_richter.py` — magnitude-frequency distribution
 - `depth_maps.py` — depth distribution

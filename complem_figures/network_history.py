@@ -11,7 +11,7 @@ With --mag_version, panel (c) is dropped and a new top panel is added: every
 event of magnitude >= 4 (magnitude from the --obs event lines) as a point,
 y = its vertical uncertainty `true_erz` (1-sigma, km). Panels become
 (a) erz of M >= 4, (b) events per year, (c) stations per year; default output
-network_history_mag.png.
+network_history_mag.png. The large-N guide bands are not drawn in this version.
 
 New script (see pipeline/10_figures.md conventions); no existing figure script is modified.
 
@@ -299,7 +299,7 @@ def main():
     fig.patch.set_facecolor("white")
 
     # guide lines for the large-N campaigns
-    if not args.no_guides:
+    if not args.no_guides and not args.mag_version:   # bands refer to the dropped panel (c)
         for label, s, e, prec, fam, net in DEPLOYMENTS:
             if net not in GUIDES:
                 continue
