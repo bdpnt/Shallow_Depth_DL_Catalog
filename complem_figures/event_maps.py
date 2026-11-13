@@ -13,11 +13,14 @@ The basemap is the light grey hillshade of `basemap_lines.draw_relief_pygmt`
 Events above sea level are magenta (formerly GMT's white background colour,
 invisible on the relief), events deeper than `--max-depth` black.
 
-`--faults` draws the QAFI v4 Quaternary fault traces over the events, from
-`faults/QAFI_v4_traces.gmt`, converted once from the shapefile (geometry only):
+`--faults` draws the QAFI v4 Quaternary fault traces over the events, solid
+for the main traces and dashed for the debated ones, with a legend. Both come
+from `.gmt` files converted once from the shapefiles (geometry only):
     ogr2ogr -f OGR_GMT -select "" faults/QAFI_v4_traces.gmt \\
         faults/QAFI_Traces/QAFI_v4_traces.shp
-QAFI is an Iberian database: its traces stop at 43.14 N.
+    ogr2ogr -f OGR_GMT -select "" faults/QFIv4_Debated_traces.gmt \\
+        faults/DEBATED_FAULTS_Traces/QFIv4_Debated_traces.shp
+QAFI is an Iberian database: its traces stop at 43.14 N (43.27 N debated).
 
 Quality filter (erh ≤ 3 km, erv ≤ 3 km, gap ≤ 300°, rms ≤ 0.5 s) is applied
 by default. Use --no-filter to skip it (e.g. for pre-relocation .obs files
@@ -96,6 +99,7 @@ except ImportError:                                     # run as a script
 _MODULE_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 _QAFI_FILE    = os.path.join(_PROJECT_ROOT, 'faults', 'QAFI_v4_traces.gmt')
+_DEBATED_FILE = os.path.join(_PROJECT_ROOT, 'faults', 'QFIv4_Debated_traces.gmt')
 
 # ---------------------------------------------------------------------------
 # Cross-sections of the report
@@ -134,7 +138,7 @@ class EventMapsParams:
     axis_pen:      str             = '0.9p,red'
     box_pen:       str             = '0.4p,red,3p_2p'
     dem:           bool            = True       # shaded relief instead of flat land / sea
-    faults:        bool            = False      # QAFI v4 fault traces over the events
+    faults:        bool            = False      # QAFI v4 fault traces (main + debated) over the events
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +332,9 @@ def generate_figure(parameters):
     )
 
     if parameters.faults:
-        fig.plot(data=_QAFI_FILE, pen='1.2p,darkorange')
+        fig.plot(data=_QAFI_FILE,    pen='1.2p,darkorange',        label='QAFI v4')
+        fig.plot(data=_DEBATED_FILE, pen='1.2p,darkorange,4p_2p', label='QAFI v4 debated')
+        fig.legend(position='jTR+o0.2c', box='+gwhite+p0.5p')
 
     # -- Cross-sections, drawn last so they stay legible over the seismicity --
     for (lon0, lat0, azimut, length_km, half_width_km) in parameters.profiles:
@@ -405,7 +411,7 @@ def main():
     parser.add_argument('--no-dem', action='store_true',
                         help='Flat grey land and blue sea instead of the shaded relief')
     parser.add_argument('--faults', action='store_true',
-                        help='Draw the QAFI v4 fault traces over the events')
+                        help='Draw the QAFI v4 fault traces (main solid, debated dashed) over the events')
     args = parser.parse_args()
 
     ri = args.region_in
