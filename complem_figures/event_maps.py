@@ -332,9 +332,10 @@ def generate_figure(parameters):
     )
 
     if parameters.faults:
-        fig.plot(data=_QAFI_FILE,    pen='1.2p,darkorange',        label='QAFI v4')
-        fig.plot(data=_DEBATED_FILE, pen='1.2p,darkorange,4p_2p', label='QAFI v4 debated')
-        fig.legend(position='jTR+o0.2c', box='+gwhite+p0.5p')
+        fig.plot(data=_QAFI_FILE,    pen='1.2p,darkorange',        label='Faults (QAFI)')
+        fig.plot(data=_DEBATED_FILE, pen='1.2p,darkorange,4p_2p', label='Debated faults (QAFI)')
+        with pg.config(FONT_ANNOT_PRIMARY='8p'):
+            fig.legend(position='jTR+o0.2c', box='+gwhite+p0.5p')
 
     # -- Cross-sections, drawn last so they stay legible over the seismicity --
     for (lon0, lat0, azimut, length_km, half_width_km) in parameters.profiles:
