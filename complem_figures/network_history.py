@@ -109,6 +109,7 @@ FAMILY_LABEL = {
 # deployments highlighted by a guide line across the three panels
 GUIDES = {"XD", "8M", "24"}
 MAG_MIN = 4.0   # threshold of the --mag_version top panel
+NEAR_DIST_KM = 10.0   # --mag_version panel (b): closest recording station within this distance
 
 
 def dec_year(date):
@@ -123,6 +124,15 @@ def events_per_year(path):
     df = pd.read_csv(path, usecols=["date-time"])
     yr = pd.to_datetime(df["date-time"], format="mixed").dt.year
     return yr.value_counts().sort_index(), len(df)
+
+
+def near_events_per_year(path, max_dist):
+    """Events per year whose closest recording station (NLL `Dist`, epicentral,
+    at the published hypocentre) lies within max_dist km."""
+    df = pd.read_csv(path, usecols=["date-time", "Dist"])
+    yr = pd.to_datetime(df["date-time"], format="mixed").dt.year
+    near = df["Dist"] <= max_dist
+    return yr[near].value_counts().sort_index(), int(near.sum())
 
 
 def stations_per_year_from_obs(path):
@@ -311,7 +321,7 @@ def main():
 
     # ------------------------------------------- top panel of --mag_version
     if args.mag_version:
-        axM.scatter(x_big, erz_big, s=26, color=BLUE, edgecolor="white", lw=0.6, zorder=3)
+        axM.scatter(x_big, erz_big, s=48, color=BLUE, edgecolor="white", lw=0.6, zorder=3)
         axM.set_yscale("log")
         axM.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
         axM.set_ylabel(f"Vertical uncertainty\nof M ≥ {MAG_MIN:g} events (km)")
@@ -322,7 +332,15 @@ def main():
     # ------------------------------------------------------------- panel (a)
     years = np.arange(y0, y1 + 1)
     counts = np.array([ev.get(y, 0) for y in years])
-    axA.bar(years + 0.5, counts, width=0.86, color=BLUE, edgecolor="white", lw=0.6, zorder=3)
+    axA.bar(years + 0.5, counts, width=0.86, color=BLUE, edgecolor="white", lw=0.6, zorder=3,
+            label="all events")
+    if args.mag_version:
+        near, n_near = near_events_per_year(args.catalog, NEAR_DIST_KM)
+        print(f"events with a recording station within {NEAR_DIST_KM:g} km: {n_near} of {n_ev}")
+        axA.bar(years + 0.5, [near.get(y, 0) for y in years], width=0.86, color=DARK,
+                edgecolor="white", lw=0.6, zorder=4,
+                label=f"with a recording station within {NEAR_DIST_KM:g} km of the epicentre")
+        axA.legend(loc="upper left", frameon=False, fontsize=9.6)
     axA.set_ylabel("Events per year")
     axA.yaxis.grid(True, color="#E3E6EB", lw=0.8)
     axA.set_axisbelow(True)
