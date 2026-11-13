@@ -332,8 +332,8 @@ def generate_figure(parameters):
     )
 
     if parameters.faults:
-        fig.plot(data=_QAFI_FILE,    pen='1.2p,darkorange',        label='Faults (QAFI)')
-        fig.plot(data=_DEBATED_FILE, pen='1.2p,darkorange,4p_2p', label='Debated faults (QAFI)')
+        fig.plot(data=_QAFI_FILE,    pen='1.2p,darkorange',        label='QAFI faults')
+        fig.plot(data=_DEBATED_FILE, pen='1.2p,darkorange,4p_2p', label='Debated faults')
         with pg.config(FONT_ANNOT_PRIMARY='8p'):
             fig.legend(position='jTR+o0.2c', box='+gwhite+p0.5p')
 
