@@ -28,8 +28,9 @@ Layout
   them in the caption.
 * Writes both a 300 dpi PNG and a vector PDF.
 * Also writes a location map `<output>_map.{png,pdf}` (`event_maps.generate_figure`)
-  placing the section in the range: the seismicity of the last format-6 panel
-  (else format 4), unfiltered, coloured by depth, over the report extent
+  placing the section in the range: the seismicity of `--map-bulletin`
+  (default RESULT/SSST_result.csv, whatever the panels show; same
+  `--solution` for a CSV), unfiltered, coloured by depth, over the report extent
   (`event_maps.REPORT_REGION`), with the swath (box) and the axis (line), and a
   bottom-left inset zoomed on the profile showing its end directions (SW / NE...);
   both carry the QAFI v4 fault traces (`event_maps` `faults`, Iberian only).
@@ -114,6 +115,7 @@ class CrossSectionPanelsParams:
     tags:         str   = 'abc'
     tag_position: str   = 'TR'     # GMT justification code of the tag corner
     solution:     str   = 'expect'   # format 6: 'expect' | 'maxlike'
+    map_bulletin: str   = 'RESULT/SSST_result.csv'   # location map catalogue (.csv or .obs)
 
 
 # ---------------------------------------------------------------------------
@@ -181,16 +183,13 @@ def _project(lon, lat, depth, cval, p0, p1, half_width, workdir):
 
 def _location_map(parameters, base):
     """
-    Companion map placing the section in the range: the seismicity of the last
-    panel that event_maps can read (format 6, else 4; unfiltered, same
-    --solution) over the report extent (event_maps.REPORT_REGION), with the
-    swath (box) and the axis (line), drawn solid and thick enough to stay
-    visible at that scale.
+    Companion map placing the section in the range: the seismicity of
+    parameters.map_bulletin (SSST by default, independent of the panels;
+    unfiltered, same --solution for a CSV) over the report extent
+    (event_maps.REPORT_REGION), with the swath (box) and the axis (line),
+    drawn solid and thick enough to stay visible at that scale.
     """
-    bulletin = next((p for p, f, _ in reversed(parameters.panels) if f in (6, 4)), None)
-    if bulletin is None:
-        print('No format 4 or 6 panel: location map skipped.')
-        return None
+    bulletin = parameters.map_bulletin
     bulletin = bulletin if os.path.isabs(bulletin) else os.path.join(_PROJECT_ROOT, bulletin)
 
     return event_map(EventMapsParams(
@@ -339,6 +338,9 @@ def main():
     parser.add_argument('--solution', default='expect', choices=['expect', 'maxlike'],
                         help='Hypocentre read from a format-6 CSV: PDF expectation (default) '
                              'or maximum likelihood')
+    parser.add_argument('--map-bulletin', default='RESULT/SSST_result.csv',
+                        help='catalogue of the location map, RESULT/*.csv or .obs, '
+                             'independent of the panels (default: %(default)s)')
     parser.add_argument('--tags', default='abc', help='panel tags, one character each ("" for none)')
     parser.add_argument('--tag-position', default='TR', choices=['TL', 'TR', 'BL', 'BR'],
                         help='panel corner holding the tag (default: TR)')
@@ -352,6 +354,7 @@ def main():
         uncert_h=args.uncert_h, uncert_v=args.uncert_v,
         width_cm=args.width_cm, size_factor=args.size_factor, tags=args.tags,
         tag_position=args.tag_position, solution=args.solution,
+        map_bulletin=args.map_bulletin,
     ))
 
 
