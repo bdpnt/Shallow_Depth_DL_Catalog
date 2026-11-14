@@ -74,7 +74,7 @@ RIGHT_X, RIGHT_W = 15.3, 3.5      # magnitude models, velocity model, picks
 GAP = 0.45                         # vertical gap between consecutive nodes
 TOP = 0.15
 
-AGENCIES = [("OMP", "1978–2019"), ("RESIF", "2020–2025"),
+AGENCIES = [("OMP", "1978–2019"), ("RENASS", "2020–2025"),
             ("ICGC", "2020–2025"), ("IGN", "2020–2025"),
             ("LDG", "2020–2025")]
 

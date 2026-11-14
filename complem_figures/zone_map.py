@@ -10,6 +10,8 @@ Each zone is drawn with two nested rectangles:
   used to filter obs/GLOBAL.obs for each zone run.
 
 Optionally overlays seismicity from a .obs bulletin, coloured by depth.
+`--background` draws the original (pre-relocation) catalog obs/GLOBAL.obs as
+small grey dots under the zones, unfiltered.
 A quality filter (erh ≤ 3 km, erv ≤ 3 km, gap ≤ 300°, rms ≤ 0.5 s) is
 applied by default; use --no-filter to skip it (e.g. for pre-relocation .obs
 files where erh/erv are not available).
@@ -24,6 +26,11 @@ Usage
     # Zones only (no seismicity)
     python complem_figures/zone_map.py \\
         --output complem_figures/zone_map/zones_only.pdf
+
+    # Zones over the original catalog, in grey
+    python complem_figures/zone_map.py \\
+        --background \\
+        --output complem_figures/zone_map/zones_background.png
 
     # With seismicity overlay, no quality filter (pre-relocation catalog)
     python complem_figures/zone_map.py \\
@@ -111,6 +118,7 @@ def _load_zones(loc_dir):
 
 
 _LOC_DIR = os.path.join(_PROJECT_ROOT, 'run', 'nll_loc')
+_ORIGINAL_BULLETIN = os.path.join(_PROJECT_ROOT, 'obs', 'GLOBAL.obs')
 _ZONES   = _load_zones(_LOC_DIR)
 
 # On the light relief: dark enough to read, no magenta (events above sea level)
@@ -134,6 +142,7 @@ class ZoneMapParams:
     no_filter:    bool           = False
     map_region:   Optional[list] = None  # [lon_min, lon_max, lat_min, lat_max]
     dem:          bool           = True  # shaded relief instead of flat land / sea
+    background:   bool           = False # original catalog (GLOBAL.obs) in grey under the zones
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +156,24 @@ def _remove_high_err(df):
     df = df[df.gap <= 300]
     df = df[df.rms <= 0.5]
     return df
+
+
+def _read_bulletin(path):
+    """Return the event lines of a .obs bulletin as a float DataFrame."""
+    with open(path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    print(f"Catalog read @ {path}")
+    events = [line.lstrip('# ').rstrip('\n').split()
+              for line in lines if line.startswith('# ')]
+    return (
+        pd.DataFrame(events)
+        .drop(columns=[0, 1, 2, 3, 4, 5, 10, 11, 12])
+        .rename(columns={6: 'Latitude', 7: 'Longitude', 8: 'Depth',
+                          9: 'Magnitude', 13: 'erh', 14: 'erv',
+                          15: 'gap', 16: 'rms'})
+        .replace('None', float('nan'))
+        .astype(float)
+    )
 
 
 def _box_coords(sw, ne):
@@ -192,6 +219,12 @@ def generate_figure(parameters):
         fig.coast(water='skyblue', land='#777777', resolution='i',
                   area_thresh='0/0/1', borders='1/0.75p,black')
 
+    if parameters.background:
+        background_df = _read_bulletin(_ORIGINAL_BULLETIN)
+        fig.plot(x=background_df.Longitude, y=background_df.Latitude,
+                 style='c0.02c', fill='gray40' if parameters.dem else 'black',
+                 transparency=60)
+
     colors = _ZONE_COLORS if parameters.dem else _ZONE_COLORS_FLAT
     for (zone_id, boxes), color in zip(_ZONES.items(), colors):
         sw_out, ne_out = boxes["outer"]
@@ -207,23 +240,10 @@ def generate_figure(parameters):
         label_lat = (sw_in[0] + ne_in[0]) / 2.0
         label_lon = (sw_in[1] + ne_in[1]) / 2.0
         fig.text(x=label_lon, y=label_lat, text=zone_id,
-                 font=f'10p,Helvetica-Bold,{color}', justify='CM')
+                 font=f'13p,Helvetica-Bold,{color}=~1.8p,white', justify='CM')
 
     if parameters.fileBulletin:
-        with open(parameters.fileBulletin, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        print(f"Catalog read @ {parameters.fileBulletin}")
-        events = [line.lstrip('# ').rstrip('\n').split()
-                  for line in lines if line.startswith('# ')]
-        events_df = (
-            pd.DataFrame(events)
-            .drop(columns=[0, 1, 2, 3, 4, 5, 10, 11, 12])
-            .rename(columns={6: 'Latitude', 7: 'Longitude', 8: 'Depth',
-                              9: 'Magnitude', 13: 'erh', 14: 'erv',
-                              15: 'gap', 16: 'rms'})
-            .replace('None', float('nan'))
-            .astype(float)
-        )
+        events_df = _read_bulletin(parameters.fileBulletin)
         if not parameters.no_filter:
             events_df = _remove_high_err(events_df)
 
@@ -237,7 +257,8 @@ def generate_figure(parameters):
             cmap=True,
             transparency=15,
         )
-        fig.colorbar(frame=['a5f5+lDepth [km] (deeper than 15 in black, above sea level in magenta)'])
+        fig.colorbar(position='JBC+e',   # end triangles: pink above sea level, black deeper
+                     frame=['a5f5+lDepth (km)'])
 
     os.makedirs(os.path.dirname(parameters.figSave), exist_ok=True)
     fig.savefig(parameters.figSave, dpi=300)
@@ -267,6 +288,9 @@ def main():
     parser.add_argument('--no-dem', action='store_true',
                         help='Flat grey land and blue sea (and the original zone colours) '
                              'instead of the shaded relief')
+    parser.add_argument('--background', action='store_true',
+                        help='Draw the original catalog (obs/GLOBAL.obs, unfiltered) '
+                             'in grey under the zones')
     args = parser.parse_args()
 
     generate_figure(ZoneMapParams(
@@ -275,6 +299,7 @@ def main():
         no_filter    = args.no_filter,
         map_region   = args.map_region,
         dem          = not args.no_dem,
+        background   = args.background,
     ))
 
 

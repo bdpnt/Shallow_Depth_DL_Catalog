@@ -3,8 +3,8 @@ cross_section_panels.py
 =======================
 Several depth sections along one profile, side by side (`cross_section.py
 --no-map` draws one) — by default the Maladeta/Aneto profile before
-relocation (a, flat colour), after NonLinLoc (b) and after NonLinLoc-SSST (c),
-the last two coloured by ErV.
+relocation (a, flat grey: no uncertainty), after NonLinLoc (b) and after
+NonLinLoc-SSST (c), the last two coloured by ErV.
 
 Layout
 ------
@@ -14,16 +14,27 @@ Layout
 * Each panel keeps the 1:1 distance/depth scale of the original.
 * Depth labels on panel a only; one ErV colour bar, to the right of the last
   panel; a bold tag (a, b, c) in each panel's top-right corner; the sea-level
-  line drawn explicitly.
+  line drawn explicitly; the compass direction of each profile end (16 points)
+  above the panel's top corners.
+* Panels without uncertainty (METRIC 'none') are drawn grey, never in a colour
+  that could read as a measurement.
 * Symbol size is the original 0.15 cm rescaled by panel width (the original
   panel is 10 cm wide), so the sections look as dense as before.
 * Catalogue reading (formats 4, 5 and 6), the quality filter, the swath selection
   by `pygmt.project`, the draw order and the clipping to the colour range are
   those of `cross_section.py`. Format 6 reads the PDF expectation by default;
   `--solution maxlike` reads the maximum-likelihood hypocentre (see
-  `event_maps.hypocentre_columns`). Events kept per panel are printed: state
-  them in the caption.
+  `event_maps.hypocentre_columns`). Events kept per panel are printed — in the
+  swath (between the two ends) and shown (also within the depth range): state
+  the shown count in the caption.
 * Writes both a 300 dpi PNG and a vector PDF.
+* Also writes a location map `<output>_map.{png,pdf}` (`event_maps.generate_figure`)
+  placing the section in the range: the seismicity of `--map-bulletin`
+  (default RESULT/SSST_result.csv, whatever the panels show; same
+  `--solution` for a CSV), unfiltered, coloured by depth, over the report extent
+  (`event_maps.REPORT_REGION`), with the swath (box) and the axis (line), and a
+  bottom-left inset zoomed on the profile showing its end directions (SW / NE...);
+  both carry the QAFI v4 fault traces (`event_maps` `faults`, Iberian only).
 
 Usage
 -----
@@ -67,10 +78,12 @@ _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
-from complem_figures.cross_section import _dest_point  # noqa: E402
-from complem_figures.event_maps import hypocentre_columns  # noqa: E402
+from complem_figures.cross_section import (  # noqa: E402
+    NO_INFO_FILL, _dest_point, label_profile_ends)
+from complem_figures.event_maps import (  # noqa: E402
+    REPORT_REGION, EventMapsParams, hypocentre_columns)
+from complem_figures.event_maps import generate_figure as event_map  # noqa: E402
 
-_FLAT_FILL        = '#DF2B2B'   # cross_section.py, formats 4 and 5
 _ORIG_PANEL_W     = 10.0        # cm, cross_section.py panel width
 _ORIG_SYMBOL      = 0.15        # cm
 _PANEL_TOP        = -1.0        # km, as cross_section.py
@@ -103,6 +116,7 @@ class CrossSectionPanelsParams:
     tags:         str   = 'abc'
     tag_position: str   = 'TR'     # GMT justification code of the tag corner
     solution:     str   = 'expect'   # format 6: 'expect' | 'maxlike'
+    map_bulletin: str   = 'RESULT/SSST_result.csv'   # location map catalogue (.csv or .obs)
 
 
 # ---------------------------------------------------------------------------
@@ -154,18 +168,49 @@ def _read_catalog(path, fmt, uncert_h, uncert_v, solution='expect'):
 
 
 def _project(lon, lat, depth, cval, p0, p1, half_width, workdir):
-    """Swath selection exactly as cross_section.py: pygmt.project, pz convention, km."""
+    """
+    Swath selection by pygmt.project (pz convention, km), restricted to the
+    segment between the two ends (length='limit', GMT -Lw). Without it the
+    whole infinite strip came back: the frame hid the extra events, but the
+    printed counts included them (Andorra SSST: 773 instead of 488).
+    """
     cross_file = os.path.join(workdir, 'cross.dat')
     pygmt.project(
         data=np.column_stack((lon, lat, depth, cval)),
         center=list(p0), endpoint=list(p1),
-        width=[-half_width, half_width],
+        width=[-half_width, half_width], length='limit',
         convention='pz', unit=True,
         outfile=cross_file, output_type='file',
     )
     if not os.path.exists(cross_file) or os.path.getsize(cross_file) == 0:
         return np.empty((0, 3))
     return np.loadtxt(cross_file, ndmin=2)
+
+
+def _location_map(parameters, base):
+    """
+    Companion map placing the section in the range: the seismicity of
+    parameters.map_bulletin (SSST by default, independent of the panels;
+    unfiltered, same --solution for a CSV) over the report extent
+    (event_maps.REPORT_REGION), with the swath (box) and the axis (line),
+    drawn solid and thick enough to stay visible at that scale.
+    """
+    bulletin = parameters.map_bulletin
+    bulletin = bulletin if os.path.isabs(bulletin) else os.path.join(_PROJECT_ROOT, bulletin)
+
+    return event_map(EventMapsParams(
+        fileBulletin = bulletin,
+        figSave      = f'{base}_map.png',
+        map_region   = list(REPORT_REGION),
+        no_filter    = True,
+        axis_pen     = '1.5p,red',
+        box_pen      = '0.8p,red',
+        inset_corners = ['BL'],
+        faults       = True,     # QAFI v4, Iberian only: nothing north of ~43.14 N
+        solution     = parameters.solution if bulletin.endswith('.csv') else 'expect',
+        profiles     = [(parameters.lon0, parameters.lat0, parameters.azimut,
+                         parameters.length, parameters.half_width)],
+    ))['outputs']
 
 
 # ---------------------------------------------------------------------------
@@ -223,11 +268,12 @@ def generate_figure(parameters):
                        'WSen' if i == 0 else 'wSen'],
             )
             fig.plot(x=[0, parameters.length], y=[0, 0], pen='0.25p,gray50')
+            label_profile_ends(fig, parameters.azimut, '8p,Helvetica-Bold,black')
 
             if len(data):
                 X, Z, cval = data[:, 0], data[:, 1], data[:, 2]
                 if metric == 'none':
-                    fig.plot(x=X, y=Z, style=f'c{symbol:.4f}c', fill=_FLAT_FILL, pen='0.15p,black')
+                    fig.plot(x=X, y=Z, style=f'c{symbol:.4f}c', fill=NO_INFO_FILL, pen='0.15p,black')
                 else:
                     style = _metric_style(metric, parameters.uncert_h, parameters.uncert_v)
                     order = np.argsort(cval)
@@ -246,8 +292,11 @@ def generate_figure(parameters):
                 dy  = '-0.08c' if pos[0] == 'T' else '0.08c'
                 fig.text(text=tag, position=pos, justify=pos, offset=f'{dx}/{dy}',
                          font='10p,Helvetica-Bold,black')
+            visible = int(((data[:, 1] >= _PANEL_TOP) & (data[:, 1] <= parameters.depth_max)).sum()
+                          if len(data) else 0)
             print(f'panel {tag or i}: {path} (format {fmt}, {metric}) — '
-                  f'{len(lon)} events after filter, {len(data)} in the swath')
+                  f'{len(lon)} events after filter, {len(data)} in the swath, '
+                  f'{visible} shown ({_PANEL_TOP:g}-{parameters.depth_max:g} km)')
 
     if style is not None:
         pygmt.makecpt(cmap=style['cmap'], series=style['series'], reverse=style['reverse'])
@@ -256,14 +305,15 @@ def generate_figure(parameters):
                      position=f'JMR+w{panel_h:.3f}c/0.3c+o0.45c/0c+v')
 
     base, _ = os.path.splitext(parameters.save_file)
+    base    = base if os.path.isabs(base) else os.path.join(_PROJECT_ROOT, base)
+    os.makedirs(os.path.dirname(base), exist_ok=True)
     outputs = []
     for path in (f'{base}.png', f'{base}.pdf'):
-        path = path if os.path.isabs(path) else os.path.join(_PROJECT_ROOT, path)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
         fig.savefig(path, dpi=300, crop=True)
         outputs.append(path)
         print(f'Figure saved @ {path}')
-    return {'output': outputs[0], 'outputs': outputs, 'counts': counts}
+    return {'output': outputs[0], 'outputs': outputs, 'counts': counts,
+            'map': _location_map(parameters, base)}
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +347,9 @@ def main():
     parser.add_argument('--solution', default='expect', choices=['expect', 'maxlike'],
                         help='Hypocentre read from a format-6 CSV: PDF expectation (default) '
                              'or maximum likelihood')
+    parser.add_argument('--map-bulletin', default='RESULT/SSST_result.csv',
+                        help='catalogue of the location map, RESULT/*.csv or .obs, '
+                             'independent of the panels (default: %(default)s)')
     parser.add_argument('--tags', default='abc', help='panel tags, one character each ("" for none)')
     parser.add_argument('--tag-position', default='TR', choices=['TL', 'TR', 'BL', 'BR'],
                         help='panel corner holding the tag (default: TR)')
@@ -310,6 +363,7 @@ def main():
         uncert_h=args.uncert_h, uncert_v=args.uncert_v,
         width_cm=args.width_cm, size_factor=args.size_factor, tags=args.tags,
         tag_position=args.tag_position, solution=args.solution,
+        map_bulletin=args.map_bulletin,
     ))
 
 

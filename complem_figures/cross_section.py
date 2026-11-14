@@ -12,8 +12,10 @@ Catalogue formats
 -----------------
 `--format` selects the reader, and only some of them carry per-event errors.
 `--use-err` and the `--uncert-h` / `--uncert-v` filter are meaningful only where
-the "errors" column below says so; elsewhere the reader substitutes dummies and
-both are silently inert.
+the "errors" column below says so; elsewhere the reader substitutes dummies,
+both are silently inert, and the section is drawn grey (`NO_INFO_FILL`), as is
+any single event missing the colouring metric. The compass direction of each
+profile end is written above the section's top corners.
 
     --format  file                                          errors available
     -------------------------------------------------------------------------
@@ -27,7 +29,7 @@ both are silently inert.
 
     (*) obs/NLL_result.obs and obs/SSST_result.obs do carry true_erh/true_erz in
         header columns 13/14, but this reader does not parse them and the
-        cross-section is drawn in a flat colour. Use --format 6 on the matching
+        cross-section is drawn in flat grey. Use --format 6 on the matching
         RESULT/*.csv instead — same events, full precision.
 
     psi, c68z and --usable need the location-PDF columns that NLL_run/pdf_metrics.py
@@ -76,8 +78,10 @@ from scipy.ndimage import gaussian_filter
 
 try:
     from complem_figures.basemap_lines import draw_relief_pygmt
+    from complem_figures.event_maps import compass_point
 except ImportError:                                     # run as a script
     from basemap_lines import draw_relief_pygmt
+    from event_maps import compass_point
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -90,6 +94,10 @@ _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 # --usable selects exactly the events exported with pyr:usable="true".
 _NOMINAL_COVERAGE = 0.6827   # erf(1/sqrt(2)), one sigma
 _C68_Z_MIN        = -2.0
+
+# Fill of events whose uncertainty is unknown (catalogue without errors, or a
+# missing value), so no colour on the section can be mistaken for a measurement.
+NO_INFO_FILL = 'gray60'
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +150,25 @@ def _dest_point(lon, lat, azimut, dist_km):
     dlat = (dist_km * cos(az)) / R
     dlon = (dist_km * sin(az)) / (R * cos(radians(lat)))
     return lon + dlon, lat + dlat
+
+
+def label_profile_ends(fig, azimut, font):
+    """
+    Write the compass direction of each end of the current section panel above
+    its top corners: x = 0 (left) is the profile origin, the right end lies
+    along `azimut`. Rounded to the nearest of 16 points (N, NNE, NE, ...).
+
+    Parameters
+    ----------
+    fig    : pygmt.Figure — with the section basemap as the current panel
+    azimut : float — profile azimuth in degrees from North
+    font   : str — GMT font of the two labels
+    """
+    # Flush with the panel edge (BL/BR), not centred on the corner, so the
+    # labels of side-by-side panels never run into each other.
+    for end_az, corner, just in ((azimut + 180.0, 'TL', 'BL'), (azimut, 'TR', 'BR')):
+        fig.text(text=compass_point(end_az), position=corner, justify=just, offset='0c/0.12c',
+                 font=font, no_clip=True)
 
 
 def _metric_style(name, parameters):
@@ -455,10 +482,19 @@ def generate_figure(parameters):
             frame      = ['xafg100+lDistance (km)', 'yafg50+lDepth (km)', 'WSen'],
         )
 
-        if parameters.FORMAT_fichier in (4, 5):
-            fig.plot(x=X, y=Z, style='c0.15c', fill='#DF2B2B', pen='0.25p,black')
+        label_profile_ends(fig, parameters.azimut, '12p,Helvetica-Bold,black')
+
+        # Formats 2 and 3 carry dummy errors (UNCERT_max - 0.01), 4 and 5 none.
+        if parameters.FORMAT_fichier in (2, 3, 4, 5):
+            fig.plot(x=X, y=Z, style='c0.15c', fill=NO_INFO_FILL, pen='0.25p,black')
         else:
             style = _metric_style(parameters.use_err, parameters)
+            # Events without the metric (Psi/C68 missing) go grey, underneath.
+            unknown = np.isnan(cval)
+            if unknown.any():
+                fig.plot(x=X[unknown], y=Z[unknown], style='c0.15c',
+                         fill=NO_INFO_FILL, pen='0.25p,black')
+                X, Z, cval = X[~unknown], Z[~unknown], cval[~unknown]
             order = np.argsort(cval)
             if not style['higher_is_better']:
                 order = order[::-1]   # worst first, so the best land on top

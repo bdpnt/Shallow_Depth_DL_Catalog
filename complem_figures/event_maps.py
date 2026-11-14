@@ -46,7 +46,11 @@ rather than GMT's `--` shorthand, whose dash and gap lengths are multiples of
 the pen width and so grow with it. The swath geometry is computed with the
 same flat-Earth helper (`_dest_point`, 1 deg = 111 km) that `cross_section.py`
 uses to select the events, so the rectangle drawn is exactly the strip
-projected onto the section.
+projected onto the section. `--profile-inset CORNER` (repeatable, i-th for the
+i-th profile) adds a zoom on that profile in a map corner, framed in red, with
+the compass direction of each axis end (and the faults, thinner and without
+legend, when `--faults` is on); `--profile-name NAME` writes the name above the
+swath and in the inset.
 
 Usage
 -----
@@ -76,6 +80,15 @@ Usage
         --bulletin   RESULT/SSST_result.csv \\
         --output     complem_figures/event_maps/SSST_result.png \\
         --no-filter --profile 0.6852 42.6 44 12 3
+
+    # Aneto and Andorra with a zoom inset each (cross_section/Aneto_Andorra_map)
+    conda run -n pygmt_env python complem_figures/event_maps.py \\
+        --bulletin   RESULT/SSST_result.csv \\
+        --output     complem_figures/cross_section/Aneto_Andorra_map.png \\
+        --no-filter --faults --map-region -2.5 3.4 41.75 43.75 \\
+        --axis-pen 1.5p,red --box-pen 0.8p,red \\
+        --profile 0.6852 42.6 44 12 3 --profile-name Aneto   --profile-inset BL \\
+        --profile 1.4 42.48 32 10 3   --profile-name Andorra --profile-inset BR
 """
 
 import argparse
@@ -139,6 +152,8 @@ class EventMapsParams:
     box_pen:       str             = '0.4p,red,3p_2p'
     dem:           bool            = True       # shaded relief instead of flat land / sea
     faults:        bool            = False      # QAFI v4 fault traces (main + debated) over the events
+    inset_corners: List[str]       = field(default_factory=list)  # i-th: corner (BL/BR/TL/TR) of profile i's zoom
+    profile_names: List[str]       = field(default_factory=list)  # i-th: name of profile i, on the map and its inset
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +224,66 @@ def profile_geometry(lon0, lat0, azimut, length_km, half_width_km):
     box  = ([lon1a, lon2a, lon2b, lon1b, lon1a],
             [lat1a, lat2a, lat2b, lat1b, lat1a])
     return axis, box
+
+
+_COMPASS_16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+               'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+
+
+def compass_point(azimut):
+    """Nearest of the 16 compass points (N, NNE, NE, ...) to an azimuth in degrees."""
+    return _COMPASS_16[int(round((azimut % 360.0) / 22.5)) % 16]
+
+
+def _depth_cpt(pg, max_depth):
+    """Session depth CPT: viridis reversed, magenta above sea level, black below max_depth."""
+    with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
+        pg.makecpt(cmap='viridis', series=[0, max_depth, 1], reverse=True)
+
+
+def _draw_profile_inset(fig, pg, events_df, parameters, profile, corner, name=''):
+    """
+    Zoom on one profile in a corner of the map, framed in red like its swath
+    on the main map: relief, events, swath (dashed), axis, the compass
+    direction of each axis end (the letters written above the cross-section
+    panels) and, if given, the profile name. Extent: the swath padded by half
+    the profile length.
+    """
+    lon0, lat0, azimut, length_km, half_width_km = profile
+    axis, box = profile_geometry(lon0, lat0, azimut, length_km, half_width_km)
+    pad_lat   = 0.5 * length_km / 111.0
+    pad_lon   = 0.5 * length_km / (111.0 * cos(radians(lat0)))
+    region    = [min(box[0]) - pad_lon, max(box[0]) + pad_lon,
+                 min(box[1]) - pad_lat, max(box[1]) + pad_lat]
+    proj      = 'M3.5c'
+    inside    = events_df[events_df.Longitude.between(region[0], region[1])
+                          & events_df.Latitude.between(region[2], region[3])]
+
+    with fig.inset(position=f'j{corner}+w3.5c+o0.15c', box='+gwhite+p1p,red'):
+        if parameters.dem:
+            draw_relief_pygmt(fig, region, proj)
+            fig.coast(region=region, projection=proj, shorelines=PYGMT_SHORELINE,
+                      resolution='f', borders='1/0.6p,black', frame='+n')
+        else:
+            fig.coast(region=region, projection=proj, water='skyblue', land='#777777',
+                      resolution='f', borders='1/0.6p,black', frame='+n')
+        _depth_cpt(pg, parameters.max_depth)
+        fig.plot(x=inside.Longitude, y=inside.Latitude, style='c0.04c',
+                 fill=inside.Depth, cmap=True)
+        if parameters.faults:   # no legend here, the main map carries it
+            fig.plot(data=_QAFI_FILE,    pen='0.8p,darkorange')
+            fig.plot(data=_DEBATED_FILE, pen='0.8p,darkorange,3p_2p')
+        fig.plot(x=box[0],  y=box[1],  pen='0.6p,red,3p_2p')
+        fig.plot(x=axis[0], y=axis[1], pen='1.2p,red')
+        gap_km = 0.15 * length_km
+        for end_az, (lon, lat) in ((azimut + 180.0, (axis[0][0], axis[1][0])),
+                                   (azimut,         (axis[0][1], axis[1][1]))):
+            x, y = _dest_point(lon, lat, end_az, gap_km)
+            fig.text(x=x, y=y, text=compass_point(end_az), font='7p,Helvetica-Bold,black',
+                     fill='white', clearance='1p/1p')
+        if name:
+            fig.text(text=name, position='TL', justify='TL', offset='0.08c/-0.08c',
+                     font='8p,Helvetica-Bold,red', fill='white', clearance='1p/1p')
 
 
 def _read_catalog(parameters):
@@ -320,8 +395,7 @@ def generate_figure(parameters):
         fig.plot(x=stations.Longitude, y=stations.Latitude,
                  style='i0.1c', fill='black', transparency=40)
 
-    with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
-        pg.makecpt(cmap='viridis', series=[0, parameters.max_depth, 1], reverse=True)
+    _depth_cpt(pg, parameters.max_depth)
     fig.plot(
         x=events_df.Longitude,
         y=events_df.Latitude,
@@ -338,17 +412,22 @@ def generate_figure(parameters):
             fig.legend(position='jTR+o0.2c', box='+gwhite+p0.5p')
 
     # -- Cross-sections, drawn last so they stay legible over the seismicity --
-    for (lon0, lat0, azimut, length_km, half_width_km) in parameters.profiles:
+    for i, (lon0, lat0, azimut, length_km, half_width_km) in enumerate(parameters.profiles):
         axis, box = profile_geometry(lon0, lat0, azimut, length_km, half_width_km)
         fig.plot(x=box[0],  y=box[1],  pen=parameters.box_pen)
         fig.plot(x=axis[0], y=axis[1], pen=parameters.axis_pen)
+        if i < len(parameters.profile_names):   # name just above the swath
+            top = max(range(4), key=lambda k: box[1][k])
+            fig.text(x=box[0][top], y=box[1][top], text=parameters.profile_names[i],
+                     justify='BC', offset='0c/0.12c', font='8p,Helvetica-Bold,red',
+                     fill='white', clearance='1p/1p')
 
-    is_csv = parameters.fileBulletin.endswith('.csv')
-    label  = {'expect': 'Expectation depth', 'maxlike': 'Max-likelihood depth'}[
-        parameters.solution] if is_csv else 'Depth'
-    fig.colorbar(frame=[f'a5f5+l{label} [km] '
-                        f'(deeper than {parameters.max_depth:g} in black, '
-                        f'above sea level in magenta)'])
+    for i, corner in enumerate(parameters.inset_corners[:len(parameters.profiles)]):
+        name = parameters.profile_names[i] if i < len(parameters.profile_names) else ''
+        _draw_profile_inset(fig, pg, events_df, parameters, parameters.profiles[i], corner, name)
+
+    fig.colorbar(position='JBC+e',   # end triangles: pink above sea level, black deeper
+                 frame=['a5f5+lDepth (km)'])
 
     base, _  = os.path.splitext(parameters.figSave)
     outputs  = []
@@ -401,6 +480,13 @@ def main():
                         metavar=('LON0', 'LAT0', 'AZIMUTH', 'LENGTH_KM', 'HALF_WIDTH_KM'),
                         default=None,
                         help='Overlay a cross-section; repeatable')
+    parser.add_argument('--profile-name', action='append', default=None, metavar='NAME',
+                        help='Name of the i-th profile, written above its swath and in its '
+                             'inset; repeatable, in --profile order')
+    parser.add_argument('--profile-inset', action='append', default=None,
+                        choices=['BL', 'BR', 'TL', 'TR'], metavar='CORNER',
+                        help='Corner (BL, BR, TL, TR) of a zoom inset on the i-th profile; '
+                             'repeatable, in --profile order')
     parser.add_argument('--profiles-default', action='store_true',
                         help='Overlay the three cross-sections of the report (Aneto, Arette, Andorra)')
     parser.add_argument('--axis-pen', default='0.9p,red',
@@ -437,6 +523,8 @@ def main():
         box_pen       = args.box_pen,
         dem           = not args.no_dem,
         faults        = args.faults,
+        inset_corners = args.profile_inset or [],
+        profile_names = args.profile_name or [],
     ))
 
 
