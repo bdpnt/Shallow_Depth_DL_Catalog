@@ -440,14 +440,16 @@ def plot_workflow_horizontal(output=None, width_cm=SLIDE_W_CM, dpi=300):
     h_proc, h_cont = 1.15, 4.1
 
     # --- main row: stages 2..7 ------------------------------------------------
-    widths = [2.2, 2.2, 2.5, 2.2, 2.5, 2.2]
+    widths = [2.1, 2.2, 2.5, 2.2, 2.5, 2.0]
+    stack = [0, 0, 0.18, 0, 0.18, 0]    # zone stacks stick out to the right
     margin = 0.3                        # clears the stage-2 badge at the edge
     badge = dict(r=0.26, fs=9.5)        # larger stage badges for the slide
-    gap = (W - 2 * margin - sum(widths)) / (len(widths) - 1)
+    # Equal visible gaps: the stack overhang is counted as part of its box.
+    gap = (W - 2 * margin - sum(widths) - sum(stack)) / (len(widths) - 1)
     xs, x = [], margin
-    for w in widths:
+    for w, s in zip(widths, stack):
         xs.append(x + w / 2)
-        x += w + gap
+        x += w + s + gap
 
     def corner_process(box, n, label):
         _rect(ax, box, "process")
@@ -506,9 +508,9 @@ def plot_workflow_horizontal(output=None, width_cm=SLIDE_W_CM, dpi=300):
     # with the data product they carry.
     products = ["Source\nbulletins", "Unified\nbulletin", "Relocated\nbulletin",
                 "Augmented\nbulletin", "Hypocenters\n+ PDFs"]
-    for a, b, label in zip(row[:-1], row[1:], products):
+    for a, b, s, label in zip(row[:-1], row[1:], stack, products):
         _arrow(ax, (a.right[0], y_row), (b.left[0], y_row))
-        x_mid = (a.right[0] + 0.09 + b.left[0]) / 2
+        x_mid = (a.right[0] + s + b.left[0]) / 2
         ax.text(x_mid, y_row + 0.12, label, ha="center", va="top",
                 fontsize=FS_SMALL, linespacing=1.1, zorder=5)
 
