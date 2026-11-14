@@ -240,7 +240,7 @@ def generate_figure(parameters):
         label_lat = (sw_in[0] + ne_in[0]) / 2.0
         label_lon = (sw_in[1] + ne_in[1]) / 2.0
         fig.text(x=label_lon, y=label_lat, text=zone_id,
-                 font=f'10p,Helvetica-Bold,{color}', justify='CM')
+                 font=f'13p,Helvetica-Bold,{color}=~1.8p,white', justify='CM')
 
     if parameters.fileBulletin:
         events_df = _read_bulletin(parameters.fileBulletin)
