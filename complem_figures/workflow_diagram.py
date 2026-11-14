@@ -128,10 +128,10 @@ def _node(ax, box, role, label, fs=None, weight="normal", stack=0):
     return box
 
 
-def _badge(ax, x, y, n):
+def _badge(ax, x, y, n, r=0.19, fs=FS_SMALL):
     """Numbered stage badge."""
-    ax.add_patch(Circle((x, y), 0.19, fc=BADGE_COLOR, ec="none", zorder=6))
-    ax.text(x, y, str(n), ha="center", va="center", fontsize=FS_SMALL,
+    ax.add_patch(Circle((x, y), r, fc=BADGE_COLOR, ec="none", zorder=6))
+    ax.text(x, y, str(n), ha="center", va="center", fontsize=fs,
             fontweight="bold", color="white", zorder=7)
 
 
@@ -441,7 +441,8 @@ def plot_workflow_horizontal(output=None, width_cm=SLIDE_W_CM, dpi=300):
 
     # --- main row: stages 2..7 ------------------------------------------------
     widths = [2.2, 2.2, 2.5, 2.2, 2.5, 2.2]
-    margin = 0.2
+    margin = 0.3                        # clears the stage-2 badge at the edge
+    badge = dict(r=0.26, fs=9.5)        # larger stage badges for the slide
     gap = (W - 2 * margin - sum(widths)) / (len(widths) - 1)
     xs, x = [], margin
     for w in widths:
@@ -453,7 +454,7 @@ def plot_workflow_horizontal(output=None, width_cm=SLIDE_W_CM, dpi=300):
         ax.text(box.x, box.y, label, ha="center", va="center",
                 fontsize=FS_PROCESS, fontweight="bold", linespacing=1.1,
                 zorder=5)
-        _badge(ax, box.x - box.w / 2, box.top[1], n)
+        _badge(ax, box.x - box.w / 2, box.top[1], n, **badge)
         return box
 
     def corner_container(box, n, label):
@@ -461,7 +462,7 @@ def plot_workflow_horizontal(output=None, width_cm=SLIDE_W_CM, dpi=300):
         ax.text(box.x, box.top[1] + 0.62, label, ha="center", va="center",
                 fontsize=FS_PROCESS, fontweight="bold", linespacing=1.1,
                 zorder=5)
-        _badge(ax, box.x - box.w / 2, box.top[1], n)
+        _badge(ax, box.x - box.w / 2, box.top[1], n, **badge)
         ax.text(box.x + box.w / 2 + 0.18, box.top[1] - 0.24, "× 6 zones",
                 ha="right", va="bottom", fontsize=FS_DATA, fontweight="bold",
                 color=BADGE_COLOR, zorder=5)
