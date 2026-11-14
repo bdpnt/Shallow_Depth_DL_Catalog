@@ -80,6 +80,9 @@ _VMIN, _VMAX = 0.0, 5.0
 _INK       = '#1A1A1A'
 _INK_MUTED = '#5A5A5A'
 _GRID      = '#D9D9D9'
+# event dots: a hue absent from rocket_r, whose dark end is near-black, so a
+# dense cluster cannot be mistaken for a large-error cell
+_EVENT_COLOR = '#00838F'
 _CM        = 1 / 2.54
 
 
@@ -246,7 +249,7 @@ def plot_period(events, fig_save, parameters):
         mesh = ax.pcolormesh(lon_edges, lat_edges, np.ma.masked_invalid(median),
                              vmin=_VMIN, vmax=_VMAX, cmap=cmap, shading='auto',
                              alpha=1.0 if relief else 0.9, rasterized=True)
-        ax.scatter(events['longitude'], events['latitude'], s=0.08, c='black',
+        ax.scatter(events['longitude'], events['latitude'], s=0.08, c=_EVENT_COLOR,
                    linewidths=0, rasterized=True)
         draw_basemap_lines(ax, borders=parameters.borders,
                            coastlines=parameters.coastlines,
