@@ -54,9 +54,11 @@ import logging
 import os
 import re
 import struct
+import sys
 import zlib
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -64,6 +66,9 @@ from scipy.spatial import cKDTree
 from scipy.special import digamma, gammaln
 from scipy.stats import chi2 as chi2dist
 from scipy.stats import rankdata, spearmanr
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from complem_figures.basemap_lines import draw_relief  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -118,6 +123,7 @@ class PdfMetricsParams:
     log_dir:    str = None
     figures:    bool = True
     figure_dir: str = None      # None -> complem_figures/pdf_metrics/
+    dem:        bool = True     # shaded relief under the two map figures
 
 
 # ---------------------------------------------------------------------------
@@ -937,10 +943,14 @@ def _generate_error_figure(data, run_name, output_path):
     plt.close(fig)
 
 
-def _draw_map_panel(ax, edges, statistic, count, spec, vmax, events, title):
-    """One lon/lat panel of a windowed statistic; returns the QuadMesh."""
+def _draw_map_panel(ax, edges, statistic, count, spec, vmax, events, title, relief=False):
+    """One lon/lat panel of a windowed statistic, optionally on the shaded relief; returns the QuadMesh."""
     masked = np.ma.masked_where(count < _MAP_MIN_COUNT, statistic)
     ax.set_facecolor('white')       # blanked cells read as white, not seaborn grey
+    if relief:
+        ax.set_xlim(*_LON_RANGE)
+        ax.set_ylim(*_LAT_RANGE)
+        draw_relief(ax, verbose=False)
     mesh = ax.pcolormesh(edges[1], edges[0], masked, cmap=spec['cmap'],
                          shading='auto', vmin=spec['vmin'], vmax=vmax)
     ax.scatter(events['longitude'], events['latitude'],
@@ -970,7 +980,7 @@ def _map_grid(data, spec, window_size):
     )
 
 
-def _generate_gridmap_figure(data, run_name, output_path):
+def _generate_gridmap_figure(data, run_name, output_path, relief=False):
     """Whole-depth lon/lat map of the three metrics, one row each."""
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -983,7 +993,7 @@ def _generate_gridmap_figure(data, run_name, output_path):
         ax = axes[row][0]
         edges, statistic, count = _map_grid(data, spec, _MAP_WINDOW)
         vmax = _map_vmax(spec, statistic, count)
-        mesh = _draw_map_panel(ax, edges, statistic, count, spec, vmax, data, spec['label'])
+        mesh = _draw_map_panel(ax, edges, statistic, count, spec, vmax, data, spec['label'], relief)
         fig.colorbar(mesh, ax=ax, label=spec['label'], shrink=0.85, pad=0.02)
         ax.set_xlabel('Longitude')
         ax.set_ylabel('Latitude')
@@ -1001,7 +1011,7 @@ def _depth_slices(depths, n_slices=_N_DEPTH_SLICES):
     return np.unique(np.nanquantile(depths, np.linspace(0, 1, n_slices + 1)))
 
 
-def _generate_depth_slice_figure(data, run_name, output_path):
+def _generate_depth_slice_figure(data, run_name, output_path, relief=False):
     """The same three maps, one column per depth slice, colour scale shared per row."""
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -1026,7 +1036,7 @@ def _generate_depth_slice_figure(data, run_name, output_path):
         for col, ((label, subset), (grid_edges, statistic, count)) in enumerate(zip(slices, grids)):
             ax = axes[row][col]
             title = f'{label} — N = {len(subset):,}' if row == 0 else ''
-            mesh = _draw_map_panel(ax, grid_edges, statistic, count, spec, vmax, subset, title)
+            mesh = _draw_map_panel(ax, grid_edges, statistic, count, spec, vmax, subset, title, relief)
             if row == len(_MAP_METRICS) - 1:
                 ax.set_xlabel('Longitude')
             if col == 0:
@@ -1089,7 +1099,7 @@ def _generate_voxel_html(data, spec, run_name, output_path):
     figure.write_html(output_path, include_plotlyjs=True)
 
 
-def generate_figures(df, run_name, figure_dir=None):
+def generate_figures(df, run_name, figure_dir=None, relief=True):
     """
     Save every diagnostic figure of the annotated catalog.
 
@@ -1110,8 +1120,8 @@ def generate_figures(df, run_name, figure_dir=None):
     outputs = []
     for name, builder in (('metrics_vs_quality', _generate_predictor_figure),
                           ('error_vs_quality',   _generate_error_figure),
-                          ('gridmap',            _generate_gridmap_figure),
-                          ('gridmap_depth',      _generate_depth_slice_figure)):
+                          ('gridmap',            partial(_generate_gridmap_figure, relief=relief)),
+                          ('gridmap_depth',      partial(_generate_depth_slice_figure, relief=relief))):
         path = os.path.join(figure_dir, f'{run_name}_{name}.pdf')
         builder(data, run_name, path)
         outputs.append(path)
@@ -1238,7 +1248,7 @@ def compute_metrics(params):
     figures = []
     if params.figures:
         try:
-            figures = generate_figures(df, params.run_name, params.figure_dir)
+            figures = generate_figures(df, params.run_name, params.figure_dir, params.dem)
         except Exception as exc:
             logger.warning(f'figures failed ({exc.__class__.__name__}: {exc})')
             print(f'Figures failed ({exc.__class__.__name__}: {exc})\n'
@@ -1287,6 +1297,8 @@ def main():
                         help='Save the diagnostic figures (default: true)')
     parser.add_argument('--figure-dir', default=None,
                         help='Figure directory (default: complem_figures/pdf_metrics/)')
+    parser.add_argument('--no-dem', action='store_true',
+                        help='No shaded relief under the two map figures')
     args = parser.parse_args()
 
     compute_metrics(PdfMetricsParams(
@@ -1298,6 +1310,7 @@ def main():
         log_dir    = args.log_dir,
         figures    = args.figures,
         figure_dir = args.figure_dir,
+        dem        = not args.no_dem,
     ))
 
 

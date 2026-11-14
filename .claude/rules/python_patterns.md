@@ -1,4 +1,9 @@
-# PATTERNS.md — Python Coding Conventions
+---
+paths:
+  - "**/*.py"
+---
+
+# Python Coding Conventions
 
 This file documents the coding conventions used throughout the Shallow_Depth_DL_Catalog project. Follow these patterns when writing new Python scripts.
 
@@ -181,4 +186,4 @@ They do **not** authorise silently changing:
 - Algorithm or matching logic
 - Any existing behaviour that is already correct
 
-When applying PATTERNS.md to an existing script, reformat and restructure. If something in the existing logic looks wrong or improvable, **ask the user before changing it** — do not alter it silently. The user can then verify and confirm or reject the change.
+When applying these conventions to an existing script, reformat and restructure. If something in the existing logic looks wrong or improvable, **ask the user before changing it** — do not alter it silently. The user can then verify and confirm or reject the change.

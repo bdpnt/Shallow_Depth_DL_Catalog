@@ -28,12 +28,31 @@ deliverable, so this is a one-off; re-run it only for a map outside that box
 If the cache is missing, `draw_basemap_lines` prints a warning and draws
 nothing, so the figure scripts still run in an environment without GMT.
 
+Shaded relief
+-------------
+The same dump also writes `relief_15s.npz`: GMT's `earth_relief_15s` over the
+dump region (int16 metres, pixel registration, ~2.5 MB), read with numpy
+alone.  `draw_relief` lays it as a light grey hillshade (NW light, vertical
+exaggeration 2, greys squeezed into 0.72-1.0 so it stays a background), with
+every pixel at or below 0 m in a very pale blue as sea.  Note that "sea" is
+the DEM's <= 0 m, not the GMT shoreline: fine for the Pyrenees, but low land
+(polders, deltas) would turn blue elsewhere.  15'' smooths the peaks (highest
+pixel 3 254 m, Aneto 3 404 m), irrelevant for a background.
+
+The PyGMT maps get the same hillshade from `draw_relief_pygmt`, which needs no
+cache: it reads `earth_relief` straight from GMT (15'', or 03'' for a map less
+than 1.5 deg across) and replaces the land / water fills of `fig.coast`, so
+the caller then draws the coast without fills (`PYGMT_SHORELINE` for the line).
+
 Usage in a figure script
 ------------------------
     from basemap_lines import draw_basemap_lines
     draw_basemap_lines(ax)                       # borders + shorelines, under the data
     draw_basemap_lines(ax, coastlines=False)     # borders only
     draw_basemap_lines(ax, zorder=5, casing=True)  # on top of the data instead
+    draw_relief(ax)                              # hillshade under the grid
+
+    draw_relief_pygmt(fig, region, projection)   # PyGMT, before fig.coast
 """
 
 import argparse
@@ -82,6 +101,20 @@ DEFAULT_ZORDER = 0.8
 CASING_COLOR   = 'white'
 CASING_EXTRA   = 1.0      # points added to the line width for the casing
 CASING_ALPHA   = 0.75
+
+# Relief: under the grid (0.5), so the gridlines stay visible over it
+RELIEF_RESOLUTION = '15s'
+RELIEF_ZORDER     = 0.4
+RELIEF_SEA_COLOR  = '#F0F6FB'
+RELIEF_GREY_MIN   = 0.72      # darkest grey of the hillshade
+RELIEF_VERT_EXAG  = 2
+PYGMT_SHORELINE   = f'{COAST_LW}p,{COAST_COLOR}'   # coast line once the fills are gone
+
+# Depth maps: events above sea level (depth < 0) used to fall on GMT's white
+# background colour, invisible on the relief.  `makecpt(reverse=True)` swaps
+# background and foreground, so set them crossed:
+#   with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):
+ABOVE_SEA_COLOR   = '#C51B7D'
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +197,35 @@ def load(kind, resolution=DEFAULT_RESOLUTION):
     return segments
 
 
+def relief_cache_path(resolution=RELIEF_RESOLUTION):
+    """Path of the `.npz` relief cache at `resolution` (a GMT earth_relief code)."""
+    return os.path.join(_BASEMAP_DIR, f'relief_{resolution}.npz')
+
+
+def dump_relief(region=None, resolution=RELIEF_RESOLUTION):
+    """Write the relief cache from PyGMT's `load_earth_relief`.  Needs PyGMT."""
+    from pygmt.datasets import load_earth_relief
+
+    region = list(region or DEFAULT_REGION)
+    grid = load_earth_relief(resolution, region=region, registration='pixel')
+    os.makedirs(_BASEMAP_DIR, exist_ok=True)
+    path = relief_cache_path(resolution)
+    np.savez_compressed(path, z=np.round(grid.values).astype(np.int16),
+                        lon=grid.lon.values, lat=grid.lat.values)
+    print(f'{path}: {grid.shape[0]} x {grid.shape[1]} cells, '
+          f'{float(grid.min()):.0f} to {float(grid.max()):.0f} m')
+    return path
+
+
+def load_relief(resolution=RELIEF_RESOLUTION):
+    """Read the relief cache as (z, lon, lat), z in metres; None if missing."""
+    path = relief_cache_path(resolution)
+    if not os.path.exists(path):
+        return None
+    with np.load(path) as d:
+        return d['z'], d['lon'], d['lat']
+
+
 # ---------------------------------------------------------------------------
 # Drawing
 # ---------------------------------------------------------------------------
@@ -212,30 +274,129 @@ def draw_basemap_lines(ax, borders=True, coastlines=True,
     return drawn
 
 
+def draw_relief(ax, resolution=RELIEF_RESOLUTION, zorder=RELIEF_ZORDER, verbose=True):
+    """
+    Draw the cached relief as a light grey hillshade, sea in very pale blue,
+    on a matplotlib lon-lat axis (under the grid by default).
+
+    Nothing is drawn (and a warning is printed) when the cache is missing.
+    Returns True when the relief was drawn.
+    """
+    from matplotlib.colors import to_rgb
+
+    relief = load_relief(resolution)
+    if relief is None:
+        if verbose:
+            print(f'WARNING: no relief cache at {relief_cache_path(resolution)} — '
+                  f'relief not drawn.  Create it once with:\n'
+                  f'  conda run -n pygmt_env python complem_figures/basemap_lines.py --dump')
+        return False
+    z, lon, lat = relief
+    grey, sea = _relief_grey(z, lon, lat)
+    dlon, dlat = lon[1] - lon[0], lat[1] - lat[0]
+    rgb = np.repeat(grey[..., None], 3, axis=2)
+    rgb[sea] = to_rgb(RELIEF_SEA_COLOR)
+    # imshow would reset the limits to the relief's extent: keep the caller's
+    xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    ax.imshow(rgb, origin='lower', interpolation='bilinear', zorder=zorder,
+              extent=(lon[0] - dlon / 2, lon[-1] + dlon / 2,
+                      lat[0] - dlat / 2, lat[-1] + dlat / 2),
+              aspect='auto', rasterized=True)
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    return True
+
+
+def draw_relief_pygmt(fig, region, projection=None):
+    """
+    Draw the same light grey hillshade (sea very pale blue) on a PyGMT figure,
+    in place of `fig.coast`'s land / water fills: call it before `fig.coast`,
+    then draw the coast without fills.
+
+    `region` is [W, E, S, N]; `projection` defaults to the figure's current one.
+    The grid is read from GMT's `earth_relief` (03'' under 1.5 deg, else 15'').
+    """
+    import tempfile
+
+    from pygmt.datasets import load_earth_relief
+
+    w, e, s, n = (float(v) for v in region[:4])
+    span = max(e - w, n - s)
+    pad  = 0.05 * span
+    grid = load_earth_relief('03s' if span < 1.5 else '15s',
+                             region=[w - pad, e + pad, s - pad, n + pad])
+    grey, sea = _relief_grey(grid.values, grid.lon.values, grid.lat.values)
+    grey[sea] = 0.0                              # below the land ramp -> sea colour
+
+    sea_rgb = '/'.join(str(int(RELIEF_SEA_COLOR[i:i + 2], 16)) for i in (1, 3, 5))
+    g0 = round(RELIEF_GREY_MIN * 255)
+    with tempfile.NamedTemporaryFile('w', suffix='.cpt', delete=False) as f:
+        f.write(f'0 {sea_rgb} {RELIEF_GREY_MIN} {sea_rgb}\n'
+                f'{RELIEF_GREY_MIN} {g0} 1 255\nB {sea_rgb}\nF 255\nN {sea_rgb}\n')
+        cpt = f.name
+    kw = {'region': region, 'projection': projection} if projection else {}
+    try:
+        fig.grdimage(grid=grid.copy(data=grey.astype('float32')), cmap=cpt, **kw)
+    finally:
+        os.remove(cpt)
+    return True
+
+
+def _relief_grey(z, lon, lat):
+    """
+    Hillshade of a relief grid as greys in [RELIEF_GREY_MIN, 1], and the sea
+    mask (z <= 0, flattened so it carries no bathymetry texture).
+    """
+    from matplotlib.colors import LightSource
+
+    z   = np.asarray(z, dtype=float).copy()
+    sea = z <= 0
+    z[sea] = 0
+    dx = np.deg2rad(abs(lon[1] - lon[0])) * 6371e3 * np.cos(np.deg2rad(np.mean(lat)))
+    dy = np.deg2rad(abs(lat[1] - lat[0])) * 6371e3
+    # LightSource takes row 0 as north; a grid starting in the south is flipped
+    # around it, or the NW light comes from the SW and valleys read as ridges
+    flip  = slice(None, None, -1) if lat[0] < lat[-1] else slice(None)
+    shade = LightSource(azdeg=315, altdeg=45).hillshade(
+        z[flip], vert_exag=RELIEF_VERT_EXAG, dx=dx, dy=dy)[flip]
+    return RELIEF_GREY_MIN + (1 - RELIEF_GREY_MIN) * shade, sea
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Dump the GMT national borders / shorelines used by the matplotlib report figures.')
+        description='Dump the GMT national borders / shorelines / relief used by the matplotlib report figures.')
     parser.add_argument('--dump', action='store_true', help='write the .xy caches (needs GMT)')
     parser.add_argument('--region', nargs=4, type=float, default=DEFAULT_REGION,
                         metavar=('LON_MIN', 'LON_MAX', 'LAT_MIN', 'LAT_MAX'))
     parser.add_argument('--resolution', default=DEFAULT_RESOLUTION,
                         choices=['c', 'l', 'i', 'h', 'f'], help='GMT -D resolution (default: i)')
-    parser.add_argument('--kinds', nargs='+', default=['borders', 'shorelines'],
-                        choices=['borders', 'shorelines'])
+    parser.add_argument('--kinds', nargs='+', default=['borders', 'shorelines', 'relief'],
+                        choices=['borders', 'shorelines', 'relief'])
+    parser.add_argument('--relief-resolution', default=RELIEF_RESOLUTION,
+                        help=f'GMT earth_relief resolution (default: {RELIEF_RESOLUTION})')
     args = parser.parse_args()
+    lines = tuple(k for k in args.kinds if k != 'relief')
 
     if args.dump:
-        dump(region=args.region, resolution=args.resolution, kinds=tuple(args.kinds))
+        if lines:
+            dump(region=args.region, resolution=args.resolution, kinds=lines)
+        if 'relief' in args.kinds:
+            dump_relief(region=args.region, resolution=args.relief_resolution)
         return
-    for kind in args.kinds:
+    for kind in lines:
         segments = load(kind, args.resolution)
         path = cache_path(kind, args.resolution)
         print(f'{path}: ' + ('missing — run with --dump' if segments is None
                              else f'{len(segments)} segments'))
+    if 'relief' in args.kinds:
+        relief = load_relief(args.relief_resolution)
+        print(f'{relief_cache_path(args.relief_resolution)}: '
+              + ('missing — run with --dump' if relief is None
+                 else f'{relief[0].shape[0]} x {relief[0].shape[1]} cells'))
 
 
 if __name__ == '__main__':

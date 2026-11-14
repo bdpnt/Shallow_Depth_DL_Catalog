@@ -21,8 +21,9 @@ own line; LDG and OMP have no source-specific line and are not drawn.
 
 Backends
 --------
-`--backend pygmt` (default) draws the repo's usual basemap (`fig.coast`,
-land `#777777`, water `skyblue`, national borders) and writes a 300 dpi PNG
+`--backend pygmt` (default) draws the light grey hillshade of
+`basemap_lines.draw_relief_pygmt` with shorelines and national borders
+(`--no-dem`: flat `--land` / `--water` fills instead) and writes a 300 dpi PNG
 and a vector PDF.  Needs `pygmt_env`.
 
 `--backend mpl` draws the same geometry with matplotlib and **no coastline**
@@ -102,6 +103,7 @@ class AOIMapParams:
     no_events:   bool        = False
     land:        str         = LAND_DEFAULT
     water:       str         = WATER_DEFAULT
+    dem:         bool        = True       # pygmt: shaded relief instead of land / water fills
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +231,10 @@ _PEN_IGNICGC = f'1.6p,{C_IGNICGC},8p_4p'
 
 def _render_pygmt(parameters, ev_resif, ev_ignicgc):
     import pygmt as pg
+    try:
+        from complem_figures.basemap_lines import draw_relief_pygmt
+    except ImportError:                                 # run as a script
+        from basemap_lines import draw_relief_pygmt
 
     region = parameters.map_region
     fig    = pg.Figure()
@@ -237,9 +243,12 @@ def _render_pygmt(parameters, ev_resif, ev_ignicgc):
                    FONT_LABEL='10p'):
         fig.basemap(region=region, projection=f'M{parameters.width}',
                     frame=['af', 'xa1f0.5+lLongitude', 'ya1f0.5+lLatitude'])
-    fig.coast(water=parameters.water, land=parameters.land, resolution='i',
-              area_thresh='0/0/1', shorelines=SHORELINE_PEN,
-              borders=[f'1/{BORDER_PEN}'])
+    fills = {'water': parameters.water, 'land': parameters.land}
+    if parameters.dem:
+        draw_relief_pygmt(fig, region)
+        fills = {}
+    fig.coast(resolution='i', area_thresh='0/0/1', shorelines=SHORELINE_PEN,
+              borders=[f'1/{BORDER_PEN}'], **fills)
 
     poly = _admitted_polygon(region, UNIVERSAL + [LINE_RESIF, LINE_IGN_ICGC])
     fig.plot(x=[p[0] for p in poly], y=[p[1] for p in poly],
@@ -362,6 +371,8 @@ def main():
     parser.add_argument('--land', default=LAND_DEFAULT,
                         help="land fill; '#777777' restores the pipeline maps' shade")
     parser.add_argument('--water', default=WATER_DEFAULT, help='water fill')
+    parser.add_argument('--no-dem', action='store_true',
+                        help='flat --land / --water fills instead of the shaded relief (pygmt)')
     args = parser.parse_args()
 
     params = AOIMapParams(
@@ -374,6 +385,7 @@ def main():
         no_events=args.no_events,
         land=args.land,
         water=args.water,
+        dem=not args.no_dem,
     )
     generate_figure(params)
 

@@ -7,6 +7,12 @@ Three panels on a shared time axis:
       backbone separated out, and the inventory-declared count as a lower bound
   (c) time span of the temporary / campaign deployments of the Pyrenees
 
+With --mag_version, panel (c) is dropped and a new top panel is added: every
+event of magnitude >= 4 (magnitude from the --obs event lines) as a point,
+y = its vertical uncertainty `true_erz` (1-sigma, km). Panels become
+(a) erz of M >= 4, (b) events per year, (c) stations per year; default output
+network_history_mag.png. The large-N guide bands are not drawn in this version.
+
 New script (see pipeline/10_figures.md conventions); no existing figure script is modified.
 
 CLI:
@@ -102,6 +108,8 @@ FAMILY_LABEL = {
 }
 # deployments highlighted by a guide line across the three panels
 GUIDES = {"XD", "8M", "24"}
+MAG_MIN = 4.0   # threshold of the --mag_version top panel
+NEAR_DIST_KM = 10.0   # --mag_version panel (b): closest recording station within this distance
 
 
 def dec_year(date):
@@ -116,6 +124,15 @@ def events_per_year(path):
     df = pd.read_csv(path, usecols=["date-time"])
     yr = pd.to_datetime(df["date-time"], format="mixed").dt.year
     return yr.value_counts().sort_index(), len(df)
+
+
+def near_events_per_year(path, max_dist):
+    """Events per year whose closest recording station (NLL `Dist`, epicentral,
+    at the published hypocentre) lies within max_dist km."""
+    df = pd.read_csv(path, usecols=["date-time", "Dist"])
+    yr = pd.to_datetime(df["date-time"], format="mixed").dt.year
+    near = df["Dist"] <= max_dist
+    return yr[near].value_counts().sort_index(), int(near.sum())
 
 
 def stations_per_year_from_obs(path):
@@ -185,6 +202,27 @@ def declared_per_year(path, last_year):
     return counts, len(codes), n_undated
 
 
+def large_events_erz(catalog, obs, min_mag):
+    """Decimal year and true_erz of events with magnitude >= min_mag.
+
+    The catalog's Mamp/Mdur columns are placeholders, so the magnitude is read
+    from the event line preceding each PUBLIC_ID line of the bulletin.
+    """
+    mags, header = {}, None
+    with open(obs) as fh:
+        for line in fh:
+            if line.startswith("# 1") or line.startswith("# 2"):
+                header = line.split()
+            elif line.startswith("PUBLIC_ID"):
+                mags[line.split()[1]] = float(header[10])
+    df = pd.read_csv(catalog, usecols=["date-time", "publicId", "true_erz"])
+    df["mag"] = df["publicId"].map(mags)
+    big = df[df["mag"] >= min_mag]
+    t = pd.to_datetime(big["date-time"], format="mixed")
+    x = np.array([dec_year(d.date()) for d in t])
+    return x, big["true_erz"].to_numpy(), int(df["mag"].isna().sum())
+
+
 def step_xy(counts, y0, y1):
     """Year-binned counts as a staircase (value held over the calendar year)."""
     xs, ys = [], []
@@ -201,14 +239,21 @@ def main():
     ap.add_argument("--catalog", default="RESULT/SSST_result.csv")
     ap.add_argument("--obs", default="obs/SSST_result.obs")
     ap.add_argument("--inventory", default="stations/GLOBAL_inventory.xml")
-    ap.add_argument("--output", default="complem_figures/network_history/network_history.png")
+    ap.add_argument("--output", default=None,
+                    help="default complem_figures/network_history/network_history.png "
+                         "(network_history_mag.png with --mag_version)")
     ap.add_argument("--year-min", type=int, default=1978)
     ap.add_argument("--year-max", type=int, default=2025)
     ap.add_argument("--no-declared", action="store_true",
                     help="drop the inventory-declared curve from panel (b)")
     ap.add_argument("--no-guides", action="store_true",
                     help="drop the vertical guide lines of the large-N campaigns")
+    ap.add_argument("--mag_version", "--mag-version", dest="mag_version", action="store_true",
+                    help=f"drop panel (c) and add a top panel: true_erz of every M >= {MAG_MIN:g} event")
     args = ap.parse_args()
+    if args.output is None:
+        name = "network_history_mag.png" if args.mag_version else "network_history.png"
+        args.output = f"complem_figures/network_history/{name}"
 
     y0, y1 = args.year_min, args.year_max
 
@@ -232,14 +277,28 @@ def main():
 
     # ---------------------------------------------------------------- layout
     nrow = len(DEPLOYMENTS)
-    fig = plt.figure(figsize=(9.2, 10.7))
-    gs = fig.add_gridspec(3, 1, height_ratios=[2.0, 2.0, 0.25 * nrow],
-                          hspace=0.055, left=0.325, right=0.975, top=0.975, bottom=0.105)
-    axA = fig.add_subplot(gs[0])
-    axB = fig.add_subplot(gs[1], sharex=axA)
-    axC = fig.add_subplot(gs[2], sharex=axA)
+    if args.mag_version:
+        x_big, erz_big, n_nomag = large_events_erz(args.catalog, args.obs, MAG_MIN)
+        print(f"M >= {MAG_MIN:g}: {len(erz_big)} events (without magnitude: {n_nomag}), "
+              f"true_erz median {np.median(erz_big):.2f} km, "
+              f"range {erz_big.min():.2f}-{erz_big.max():.2f} km")
+        fig = plt.figure(figsize=(9.2, 7.6))
+        gs = fig.add_gridspec(3, 1, height_ratios=[2.0, 2.0, 2.0],
+                              hspace=0.08, left=0.115, right=0.975, top=0.975, bottom=0.075)
+        axM = fig.add_subplot(gs[0])
+        axA = fig.add_subplot(gs[1], sharex=axM)
+        axB = fig.add_subplot(gs[2], sharex=axM)
+        axes = (axM, axA, axB)
+    else:
+        fig = plt.figure(figsize=(9.2, 10.7))
+        gs = fig.add_gridspec(3, 1, height_ratios=[2.0, 2.0, 0.25 * nrow],
+                              hspace=0.055, left=0.325, right=0.975, top=0.975, bottom=0.105)
+        axA = fig.add_subplot(gs[0])
+        axB = fig.add_subplot(gs[1], sharex=axA)
+        axC = fig.add_subplot(gs[2], sharex=axA)
+        axes = (axA, axB, axC)
 
-    for ax in (axA, axB, axC):
+    for ax in axes:
         ax.set_xlim(y0, y1 + 1)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
@@ -250,20 +309,38 @@ def main():
     fig.patch.set_facecolor("white")
 
     # guide lines for the large-N campaigns
-    if not args.no_guides:
+    if not args.no_guides and not args.mag_version:   # bands refer to the dropped panel (c)
         for label, s, e, prec, fam, net in DEPLOYMENTS:
             if net not in GUIDES:
                 continue
             xs = dec_year(dt.date.fromisoformat(s))
             xe = dec_year(dt.date.fromisoformat(e)) if e else y1 + 1
             xe = max(xe, xs + 0.32)      # keep a one-month campaign visible
-            for ax in (axA, axB, axC):
+            for ax in axes:
                 ax.axvspan(xs, xe, color=ORANGE, alpha=0.16, lw=0, zorder=0)
+
+    # ------------------------------------------- top panel of --mag_version
+    if args.mag_version:
+        axM.scatter(x_big, erz_big, s=48, color=BLUE, edgecolor="white", lw=0.6, zorder=3)
+        axM.set_yscale("log")
+        axM.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+        axM.set_ylabel(f"Vertical uncertainty\nof M ≥ {MAG_MIN:g} events (km)")
+        axM.yaxis.grid(True, color="#E3E6EB", lw=0.8)
+        axM.set_axisbelow(True)
+        axM.tick_params(labelbottom=False)
 
     # ------------------------------------------------------------- panel (a)
     years = np.arange(y0, y1 + 1)
     counts = np.array([ev.get(y, 0) for y in years])
-    axA.bar(years + 0.5, counts, width=0.86, color=BLUE, edgecolor="white", lw=0.6, zorder=3)
+    axA.bar(years + 0.5, counts, width=0.86, color=BLUE, edgecolor="white", lw=0.6, zorder=3,
+            label="all events")
+    if args.mag_version:
+        near, n_near = near_events_per_year(args.catalog, NEAR_DIST_KM)
+        print(f"events with a recording station within {NEAR_DIST_KM:g} km: {n_near} of {n_ev}")
+        axA.bar(years + 0.5, [near.get(y, 0) for y in years], width=0.86, color=DARK,
+                edgecolor="white", lw=0.6, zorder=4,
+                label=f"with a recording station within {NEAR_DIST_KM:g} km of the epicentre")
+        axA.legend(loc="upper left", frameon=False, fontsize=9.6)
     axA.set_ylabel("Events per year")
     axA.yaxis.grid(True, color="#E3E6EB", lw=0.8)
     axA.set_axisbelow(True)
@@ -284,8 +361,14 @@ def main():
     axB.set_ylabel("Number of stations")
     axB.yaxis.grid(True, color="#E3E6EB", lw=0.8)
     axB.set_axisbelow(True)
-    axB.tick_params(labelbottom=False)
     axB.legend(loc="upper left", frameon=False, fontsize=9.6, handlelength=2.4)
+
+    if args.mag_version:    # no deployment panel: (b) is the bottom panel
+        axB.set_xlabel("Year")
+        fig.align_ylabels(axes)
+        _save_with_letters(fig, axes, args.output, 0.012)
+        return
+    axB.tick_params(labelbottom=False)
 
     # ------------------------------------------------------------- panel (c)
     for i, (label, s, e, prec, fam, net) in enumerate(DEPLOYMENTS):
@@ -333,13 +416,18 @@ def main():
     fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.004),
                ncol=3, frameon=False, fontsize=9.6, handlelength=1.9, columnspacing=2.2)
 
+    _save_with_letters(fig, axes, args.output, 0.018)
+
+
+def _save_with_letters(fig, axes, output, x_letter):
+    """Letter the panels a, b, c from the top and write PNG (300 dpi) + PDF."""
     # panel letters (journal style): bold, no parentheses, no panel titles,
     # placed at the far left of the figure, level with each panel's top edge
-    for ax, letter in ((axA, "a"), (axB, "b"), (axC, "c")):
-        fig.text(0.018, ax.get_position().y1, letter, fontsize=14,
+    for ax, letter in zip(axes, "abc"):
+        fig.text(x_letter, ax.get_position().y1, letter, fontsize=14,
                  fontweight="bold", ha="left", va="top")
 
-    out = Path(args.output)
+    out = Path(output)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=300)
     fig.savefig(out.with_suffix(".pdf"))

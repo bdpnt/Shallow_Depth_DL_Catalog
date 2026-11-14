@@ -12,6 +12,7 @@ sys.path.append(parent_dir)
 from dataclasses import dataclass
 import pygmt as pg
 import pandas as pd
+from complem_figures.basemap_lines import ABOVE_SEA_COLOR, PYGMT_SHORELINE, draw_relief_pygmt
 
 @dataclass
 class MapPostRunParams:
@@ -42,10 +43,12 @@ def genFigure(parameters):
     fig = pg.Figure()
     with pg.config(MAP_FRAME_TYPE="fancy+"):
         fig.basemap(region=region, projection="M6i", frame='af')
-    fig.coast(water="skyblue", land='#777777', resolution='i', area_thresh='0/0/1', borders="1/0.75p,black")
+    draw_relief_pygmt(fig, region)
+    fig.coast(shorelines=PYGMT_SHORELINE, resolution='i', area_thresh='0/0/1', borders="1/0.75p,black")
 
     #---- Plot events
-    pg.makecpt(cmap="viridis", series=[0,15,1], reverse=True)
+    with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
+        pg.makecpt(cmap="viridis", series=[0,15,1], reverse=True)
     fig.plot(
         x=events_df.Longitude,
         y=events_df.Latitude,
@@ -56,7 +59,7 @@ def genFigure(parameters):
         transparency=30,
     )
 
-    fig.colorbar(frame=['a5f5+lDepth [km] (events above 15 are in black)'])
+    fig.colorbar(frame=['a5f5+lDepth [km] (deeper than 15 in black, above sea level in magenta)'])
     fig.savefig(parameters.figSave, dpi=300)
 
     print(f"Figure succesfully saved @ {parameters.figSave}")

@@ -10,7 +10,9 @@ zones (info lost once merge_regional_results.py deduplicates), and events
 whose winning zone changed between the two stages.
 
 Optionally saves a whole-Pyrenees gridmap PDF of the median pdfVolume/
-ellipsoidVolume change (requires matplotlib/seaborn, e.g. seisbench_env).
+ellipsoidVolume change (requires matplotlib/seaborn, e.g. seisbench_env), on
+the shaded relief of `basemap_lines.draw_relief` with opaque cells (`--no-dem`:
+no relief, cells at 0.9 alpha as before).
 
 Usage
 -----
@@ -37,6 +39,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 from NLL_run.pdf_metrics import (METRIC_COLUMNS, final_iteration_dir,  # noqa: E402
                                  windowed_stat_grid)
+from complem_figures.basemap_lines import draw_relief  # noqa: E402
 
 # Post-SSST only: these come from the .scat clouds of the final SSST relocation,
 # and run/nll_loc/ holds no .scat, so there is no pre-stage counterpart to pair
@@ -66,6 +69,7 @@ class EventRankingParams:
     max_erz:         float = 3.0
     corr_matrix:     bool = False
     corr_matrix_output: str = None
+    dem:             bool = True    # shaded relief under the gridmap cells
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +224,7 @@ def _metric_series(ranking_df, base_col, metric):
     return post - pre
 
 
-def _add_gridmap_subplot(events, ax, values, label, metric, bin_size, min_count):
+def _add_gridmap_subplot(events, ax, values, label, metric, bin_size, min_count, relief=False):
     """
     Render a windowed-median diff grid and event scatter onto a matplotlib axis.
 
@@ -234,6 +238,8 @@ def _add_gridmap_subplot(events, ax, values, label, metric, bin_size, min_count)
                             or 'pct_change' (linear ±_PCT_VMAX scale)
     bin_size  : float     — grid cell size in degrees
     min_count : int       — minimum event count for a cell to be shown
+    relief    : bool      — shaded relief under the cells, which then go opaque
+                            (coolwarm and the hillshade both carry lightness)
 
     Returns
     -------
@@ -264,8 +270,11 @@ def _add_gridmap_subplot(events, ax, values, label, metric, bin_size, min_count)
         median_masked = np.ma.masked_where(count < min_count, median)
         scale_kwargs = {'vmin': -_PCT_VMAX, 'vmax': _PCT_VMAX}
 
+    ax.set_xlim(_LON_MIN, _LON_MAX)
+    ax.set_ylim(_LAT_MIN, _LAT_MAX)
+    drawn = relief and draw_relief(ax, verbose=False)
     mesh = ax.pcolormesh(lon_edges, lat_edges, median_masked,
-                         cmap='coolwarm', shading='auto', alpha=0.9,
+                         cmap='coolwarm', shading='auto', alpha=1.0 if drawn else 0.9,
                          **scale_kwargs)
 
     sns.scatterplot(x=events['longitude'], y=events['latitude'],
@@ -281,7 +290,7 @@ def _add_gridmap_subplot(events, ax, values, label, metric, bin_size, min_count)
     return mesh
 
 
-def _generate_gridmap_figure(ranking_df, metric, output_path, bin_size, min_count):
+def _generate_gridmap_figure(ranking_df, metric, output_path, bin_size, min_count, relief=False):
     """Build and save the whole-Pyrenees pdfVolume/ellipsoidVolume gridmap PDF."""
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -295,8 +304,10 @@ def _generate_gridmap_figure(ranking_df, metric, output_path, bin_size, min_coun
     ellipsoid_values = _metric_series(ranking_df, 'ellipsoidVolume', metric)
 
     unit = '%' if metric == 'pct_change' else f'km³, symlog, |Δ| < {_MIN_CHANGE_KM3:g} blank'
-    mesh_pdf = _add_gridmap_subplot(events, axes[0], pdf_values, 'pdfVolume', metric, bin_size, min_count)
-    mesh_ellipsoid = _add_gridmap_subplot(events, axes[1], ellipsoid_values, 'ellipsoidVolume', metric, bin_size, min_count)
+    mesh_pdf = _add_gridmap_subplot(events, axes[0], pdf_values, 'pdfVolume', metric, bin_size,
+                                    min_count, relief)
+    mesh_ellipsoid = _add_gridmap_subplot(events, axes[1], ellipsoid_values, 'ellipsoidVolume', metric,
+                                          bin_size, min_count, relief)
 
     fig.colorbar(mesh_pdf, ax=axes[0], label=f'Median pdfVolume change ({unit})', shrink=0.85, pad=0.02)
     fig.colorbar(mesh_ellipsoid, ax=axes[1], label=f'Median ellipsoidVolume change ({unit})', shrink=0.85, pad=0.02)
@@ -407,7 +418,8 @@ def generate_ranking(params):
         metrics = ['pct_change', 'diff'] if params.metric == 'both' else [params.metric]
         for metric in metrics:
             figure_output = _suffixed_path(base_output, _METRIC_SUFFIXES[metric])
-            _generate_gridmap_figure(ranking_df, metric, figure_output, params.bin_size, params.min_count)
+            _generate_gridmap_figure(ranking_df, metric, figure_output, params.bin_size, params.min_count,
+                                     params.dem)
             print(f'Gridmap saved @ {figure_output}')
 
     if params.corr_matrix:
@@ -479,6 +491,8 @@ def main():
     parser.add_argument('--corr-matrix-output', default=None,
                         help='Correlation-matrix PDF path (default: '
                              'complem_figures/event_ranking/<run-name>_corr_matrix.pdf)')
+    parser.add_argument('--no-dem', action='store_true',
+                        help='No shaded relief under the gridmap cells')
     args = parser.parse_args()
 
     generate_ranking(EventRankingParams(
@@ -498,6 +512,7 @@ def main():
         max_erz         = args.max_erz,
         corr_matrix     = args.corr_matrix,
         corr_matrix_output = args.corr_matrix_output,
+        dem             = not args.no_dem,
     ))
 
 

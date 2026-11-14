@@ -8,6 +8,20 @@ events, and plots each event on a Pyrenees basemap coloured by depth.
 Optionally overlays station positions, zone-boundary rectangles and
 cross-section profiles. Writes both a 300 dpi PNG and a vector PDF.
 
+The basemap is the light grey hillshade of `basemap_lines.draw_relief_pygmt`
+(sea very pale blue); `--no-dem` restores the flat grey land and blue sea.
+Events above sea level are magenta (formerly GMT's white background colour,
+invisible on the relief), events deeper than `--max-depth` black.
+
+`--faults` draws the QAFI v4 Quaternary fault traces over the events, solid
+for the main traces and dashed for the debated ones, with a legend. Both come
+from `.gmt` files converted once from the shapefiles (geometry only):
+    ogr2ogr -f OGR_GMT -select "" faults/QAFI_v4_traces.gmt \\
+        faults/QAFI_Traces/QAFI_v4_traces.shp
+    ogr2ogr -f OGR_GMT -select "" faults/QFIv4_Debated_traces.gmt \\
+        faults/DEBATED_FAULTS_Traces/QFIv4_Debated_traces.shp
+QAFI is an Iberian database: its traces stop at 43.14 N (43.27 N debated).
+
 Quality filter (erh ≤ 3 km, erv ≤ 3 km, gap ≤ 300°, rms ≤ 0.5 s) is applied
 by default. Use --no-filter to skip it (e.g. for pre-relocation .obs files
 where erh/erv are not available).
@@ -72,12 +86,20 @@ from typing import List, Optional, Tuple
 
 import pandas as pd
 
+try:
+    from complem_figures.basemap_lines import (ABOVE_SEA_COLOR, PYGMT_SHORELINE,
+                                               draw_relief_pygmt)
+except ImportError:                                     # run as a script
+    from basemap_lines import ABOVE_SEA_COLOR, PYGMT_SHORELINE, draw_relief_pygmt
+
 # ---------------------------------------------------------------------------
 # Module paths
 # ---------------------------------------------------------------------------
 
 _MODULE_DIR   = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
+_QAFI_FILE    = os.path.join(_PROJECT_ROOT, 'faults', 'QAFI_v4_traces.gmt')
+_DEBATED_FILE = os.path.join(_PROJECT_ROOT, 'faults', 'QFIv4_Debated_traces.gmt')
 
 # ---------------------------------------------------------------------------
 # Cross-sections of the report
@@ -115,6 +137,8 @@ class EventMapsParams:
     profiles:      List[Tuple[float, float, float, float, float]] = field(default_factory=list)
     axis_pen:      str             = '0.9p,red'
     box_pen:       str             = '0.4p,red,3p_2p'
+    dem:           bool            = True       # shaded relief instead of flat land / sea
+    faults:        bool            = False      # QAFI v4 fault traces (main + debated) over the events
 
 
 # ---------------------------------------------------------------------------
@@ -264,8 +288,13 @@ def generate_figure(parameters):
     fig = pg.Figure()
     with pg.config(MAP_FRAME_TYPE='fancy+'):
         fig.basemap(region=region, projection='M6i', frame='af')
-    fig.coast(water='skyblue', land='#777777', resolution='i',
-              area_thresh='0/0/1', borders='1/0.75p,black')
+    if parameters.dem:
+        draw_relief_pygmt(fig, region)
+        fig.coast(shorelines=PYGMT_SHORELINE, resolution='i',
+                  area_thresh='0/0/1', borders='1/0.75p,black')
+    else:
+        fig.coast(water='skyblue', land='#777777', resolution='i',
+                  area_thresh='0/0/1', borders='1/0.75p,black')
 
     if parameters.region_out:
         ro = parameters.region_out
@@ -291,7 +320,8 @@ def generate_figure(parameters):
         fig.plot(x=stations.Longitude, y=stations.Latitude,
                  style='i0.1c', fill='black', transparency=40)
 
-    pg.makecpt(cmap='viridis', series=[0, parameters.max_depth, 1], reverse=True)
+    with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
+        pg.makecpt(cmap='viridis', series=[0, parameters.max_depth, 1], reverse=True)
     fig.plot(
         x=events_df.Longitude,
         y=events_df.Latitude,
@@ -300,6 +330,12 @@ def generate_figure(parameters):
         cmap=True,
         transparency=15,
     )
+
+    if parameters.faults:
+        fig.plot(data=_QAFI_FILE,    pen='1.2p,darkorange',        label='QAFI faults')
+        fig.plot(data=_DEBATED_FILE, pen='1.2p,darkorange,4p_2p', label='Debated faults')
+        with pg.config(FONT_ANNOT_PRIMARY='8p'):
+            fig.legend(position='jTR+o0.2c', box='+gwhite+p0.5p')
 
     # -- Cross-sections, drawn last so they stay legible over the seismicity --
     for (lon0, lat0, azimut, length_km, half_width_km) in parameters.profiles:
@@ -311,7 +347,8 @@ def generate_figure(parameters):
     label  = {'expect': 'Expectation depth', 'maxlike': 'Max-likelihood depth'}[
         parameters.solution] if is_csv else 'Depth'
     fig.colorbar(frame=[f'a5f5+l{label} [km] '
-                        f'(events above {parameters.max_depth:g} are in black)'])
+                        f'(deeper than {parameters.max_depth:g} in black, '
+                        f'above sea level in magenta)'])
 
     base, _  = os.path.splitext(parameters.figSave)
     outputs  = []
@@ -372,6 +409,10 @@ def main():
                         help='GMT pen for the swath outline; the dash pattern is given in '
                              'absolute points (dash_gap), not as "--", so it does not scale '
                              'with the pen width (default: 0.4p,red,3p_2p)')
+    parser.add_argument('--no-dem', action='store_true',
+                        help='Flat grey land and blue sea instead of the shaded relief')
+    parser.add_argument('--faults', action='store_true',
+                        help='Draw the QAFI v4 fault traces (main solid, debated dashed) over the events')
     args = parser.parse_args()
 
     ri = args.region_in
@@ -394,6 +435,8 @@ def main():
         profiles      = profiles,
         axis_pen      = args.axis_pen,
         box_pen       = args.box_pen,
+        dem           = not args.no_dem,
+        faults        = args.faults,
     ))
 
 

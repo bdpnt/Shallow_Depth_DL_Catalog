@@ -12,7 +12,9 @@ The code a group of co-located stations keeps is the one of its best-ranked
 member under station_priority() -- permanent network first, then RESIF/RENASS,
 then a station carrying a real elevation, the XX placeholder last -- with the
 oldest start_date breaking ties. Stations left without an elevation inherit one
-from their group, then from the Open-Elevation API.
+from their group, then from the EU-DEM 25 m model (OpenTopoData API). A group
+whose declared elevations disagree by more than ELEVATION_TOLERANCE has its
+representative's elevation arbitrated against EU-DEM.
 
 Usage
 -----
@@ -57,6 +59,9 @@ PERMANENT_NETWORKS = frozenset({'FR', 'RA', 'RD', 'ES', 'CA', 'LC', 'AM'})
 RESIF_NETWORKS     = frozenset({'FR', 'RA', 'RD'})
 # Placeholder network for uncalled or unknown networks; a real code always wins over it.
 UNKNOWN_NETWORK    = 'XX'
+# Elevation disagreement (m) tolerated inside a co-located group, and between the
+# value kept and EU-DEM, before the group's elevation is arbitrated or flagged.
+ELEVATION_TOLERANCE = 100
 
 
 def _setup_logger(log_dir):
@@ -88,7 +93,7 @@ class MergeInventoryParams:
     file_save_mapping  : str — output path for the alternate-code mapping text file
     accepted_distance  : int — max distance (m) for two stations to be considered
                                the same physical site (default: 20)
-    fill_elevations    : bool — query Open-Elevation for the stations still left
+    fill_elevations    : bool — query EU-DEM (OpenTopoData) for the stations still left
                                without an elevation (default: True). The only step of
                                the pipeline that reaches the network; disable it to
                                run offline.
@@ -216,18 +221,66 @@ def _add_alternate_code(inventory):
     return inventory
 
 
+def _arbitrate_group_elevation(group, best):
+    """
+    Settle the representative's elevation when a group's declared elevations disagree.
+
+    Declared elevations are trusted by default; EU-DEM only arbitrates between them.
+    When they spread over more than ELEVATION_TOLERANCE, the representative takes the
+    declared value closest to EU-DEM at its position (one lookup: the group spans at
+    most accepted_distance, under one 25 m DEM cell or two). The choice is logged, as
+    a warning when even that value is more than ELEVATION_TOLERANCE from the DEM.
+    Members other than the representative keep their own declared value. A failed
+    lookup leaves the group untouched.
+
+    Parameters
+    ----------
+    group : list[tuple[str, obspy Station]] — (network code, station) members
+    best  : tuple[str, obspy Station]       — the group's representative
+
+    Returns
+    -------
+    bool — True when the representative's elevation was changed
+    """
+    declared = [station.elevation for _, station in group if station.elevation]
+    if len(declared) < 2 or max(declared) - min(declared) <= ELEVATION_TOLERANCE:
+        return False
+
+    members = ', '.join(f'{net}.{sta.code}={sta.elevation:g} m' for net, sta in group)
+    dem = _get_elevation(best[1].latitude, best[1].longitude)
+    time.sleep(1)  # avoid rate limiting
+    if not dem:
+        logger.warning(f"  Elevation spread in {best[1].alternate_code} ({members}): "
+                       f"DEM lookup failed, kept {best[0]}.{best[1].code} at {best[1].elevation:g} m")
+        return False
+
+    chosen = min(declared, key=lambda e: abs(e - dem))
+    message = (f"  Elevation spread in {best[1].alternate_code} ({members}): "
+               f"EU-DEM {dem} m, representative {best[0]}.{best[1].code} set to {chosen:g} m")
+    if abs(chosen - dem) > ELEVATION_TOLERANCE:
+        logger.warning(message + f" (still > {ELEVATION_TOLERANCE} m from the DEM)")
+    else:
+        logger.info(message)
+
+    changed = chosen != best[1].elevation
+    best[1].elevation = chosen
+    return changed
+
+
 def _combine_close_stations(inventory, parameters):
     """
     Give the same alternate code to stations from different networks that
     are within accepted_distance metres of each other.
 
     The code kept is the group's best-ranked station under station_priority(),
-    oldest start_date breaking ties. Members left without an elevation then inherit
-    the representative's — the group spans at most accepted_distance metres, so the
-    value is right to within its own vertical scatter.
+    oldest start_date breaking ties. If the members' declared elevations disagree, the
+    representative's is arbitrated against EU-DEM (_arbitrate_group_elevation). Members
+    left without an elevation then inherit the representative's — the group spans at
+    most accepted_distance metres, so the value is right to within its own vertical scatter.
 
     The order matters: back-filling before choosing would erase the elevation term of
-    station_priority() and hand some groups to the station that had no elevation.
+    station_priority() and hand some groups to the station that had no elevation. The
+    arbitration runs after the choice too, so it can never change a group's code.
     """
     all_stations   = [(net.code, sta) for net in inventory.networks for sta in net.stations]
     threshold_km   = parameters.accepted_distance / 1000
@@ -246,11 +299,13 @@ def _combine_close_stations(inventory, parameters):
         else:
             groups.append([(net_code, station)])
 
-    n_filled = 0
+    n_filled     = 0
+    n_arbitrated = 0
     for group in groups:
         if len(group) > 1:
             best = min(group, key=lambda x: (station_priority(x[0], x[1].elevation),
                                              x[1].start_date or UTCDateTime(datetime.datetime.max)))
+            n_arbitrated += _arbitrate_group_elevation(group, best)
             for _, station in group:
                 if station is not best[1]:
                     station.alternate_code = best[1].alternate_code
@@ -259,13 +314,14 @@ def _combine_close_stations(inventory, parameters):
                         n_filled += 1
 
     logger.info(f"Co-located grouping: {len(groups)} group(s), "
-                f"{n_filled} elevation(s) inherited within a group")
+                f"{n_filled} elevation(s) inherited within a group, "
+                f"{n_arbitrated} representative elevation(s) changed by EU-DEM arbitration")
     return inventory
 
 
 def _fill_station_elevations(inventory):
     """
-    Query Open-Elevation for the stations still left without an elevation.
+    Query EU-DEM (OpenTopoData) for the stations still left without an elevation.
 
     Whole nodal deployments are published with the field never populated, and a
     station's elevation enters the NonLinLoc travel-time computation directly through
@@ -515,7 +571,7 @@ def main():
     parser.add_argument('--distance',       type=int, default=20,
                         help='Max distance (m) for co-location (default: 20)')
     parser.add_argument('--no-fill-elevations', action='store_true',
-                        help='Skip the Open-Elevation lookup for stations left without an elevation')
+                        help='Skip the EU-DEM lookup for stations left without an elevation')
     args = parser.parse_args()
 
     params = MergeInventoryParams(
