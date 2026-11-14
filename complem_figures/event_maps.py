@@ -139,6 +139,7 @@ class EventMapsParams:
     box_pen:       str             = '0.4p,red,3p_2p'
     dem:           bool            = True       # shaded relief instead of flat land / sea
     faults:        bool            = False      # QAFI v4 fault traces (main + debated) over the events
+    dot_size:      float           = 0.02       # event symbol diameter, cm
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +326,7 @@ def generate_figure(parameters):
     fig.plot(
         x=events_df.Longitude,
         y=events_df.Latitude,
-        style='c0.02c',
+        style=f'c{parameters.dot_size}c',
         fill=events_df.Depth,
         cmap=True,
         transparency=15,

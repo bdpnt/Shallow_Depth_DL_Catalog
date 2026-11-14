@@ -27,6 +27,10 @@ Layout
   `event_maps.hypocentre_columns`). Events kept per panel are printed: state
   them in the caption.
 * Writes both a 300 dpi PNG and a vector PDF.
+* Also writes a location map `<output>_map.{png,pdf}` (`event_maps.generate_figure`):
+  the seismicity of the last format-6 panel (else format 4), unfiltered,
+  coloured by depth, with the swath (dashed box) and the axis (solid line);
+  extent = the swath's bounding box padded by one profile length.
 
 Usage
 -----
@@ -72,7 +76,9 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 from complem_figures.cross_section import (  # noqa: E402
     NO_INFO_FILL, _dest_point, label_profile_ends)
-from complem_figures.event_maps import hypocentre_columns  # noqa: E402
+from complem_figures.event_maps import (  # noqa: E402
+    EventMapsParams, hypocentre_columns, profile_geometry)
+from complem_figures.event_maps import generate_figure as event_map  # noqa: E402
 
 _ORIG_PANEL_W     = 10.0        # cm, cross_section.py panel width
 _ORIG_SYMBOL      = 0.15        # cm
@@ -171,6 +177,38 @@ def _project(lon, lat, depth, cval, p0, p1, half_width, workdir):
     return np.loadtxt(cross_file, ndmin=2)
 
 
+def _location_map(parameters, base):
+    """
+    Companion map of the section: the seismicity of the last panel that
+    event_maps can read (format 6, else 4; unfiltered, same --solution) around
+    the profile, with its swath (dashed box) and axis (solid line). The extent
+    is the swath's bounding box padded by one profile length on each side.
+    """
+    bulletin = next((p for p, f, _ in reversed(parameters.panels) if f in (6, 4)), None)
+    if bulletin is None:
+        print('No format 4 or 6 panel: location map skipped.')
+        return None
+    bulletin = bulletin if os.path.isabs(bulletin) else os.path.join(_PROJECT_ROOT, bulletin)
+
+    _, box  = profile_geometry(parameters.lon0, parameters.lat0, parameters.azimut,
+                               parameters.length, parameters.half_width)
+    pad_lat = parameters.length / 111.0
+    pad_lon = parameters.length / (111.0 * np.cos(np.radians(parameters.lat0)))
+    region  = [min(box[0]) - pad_lon, max(box[0]) + pad_lon,
+               min(box[1]) - pad_lat, max(box[1]) + pad_lat]
+
+    return event_map(EventMapsParams(
+        fileBulletin = bulletin,
+        figSave      = f'{base}_map.png',
+        map_region   = region,
+        no_filter    = True,
+        dot_size     = 0.06,     # event_maps' 0.02 cm is sized for the whole range
+        solution     = parameters.solution if bulletin.endswith('.csv') else 'expect',
+        profiles     = [(parameters.lon0, parameters.lat0, parameters.azimut,
+                         parameters.length, parameters.half_width)],
+    ))['outputs']
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -260,14 +298,15 @@ def generate_figure(parameters):
                      position=f'JMR+w{panel_h:.3f}c/0.3c+o0.45c/0c+v')
 
     base, _ = os.path.splitext(parameters.save_file)
+    base    = base if os.path.isabs(base) else os.path.join(_PROJECT_ROOT, base)
+    os.makedirs(os.path.dirname(base), exist_ok=True)
     outputs = []
     for path in (f'{base}.png', f'{base}.pdf'):
-        path = path if os.path.isabs(path) else os.path.join(_PROJECT_ROOT, path)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
         fig.savefig(path, dpi=300, crop=True)
         outputs.append(path)
         print(f'Figure saved @ {path}')
-    return {'output': outputs[0], 'outputs': outputs, 'counts': counts}
+    return {'output': outputs[0], 'outputs': outputs, 'counts': counts,
+            'map': _location_map(parameters, base)}
 
 
 # ---------------------------------------------------------------------------
