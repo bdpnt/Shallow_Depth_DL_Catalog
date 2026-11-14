@@ -34,6 +34,10 @@ the hillshade both encode lightness: the relief shows only where cells are
 masked. Writes both a
 300 dpi PNG and a vector PDF (`pdf.fonttype = 42`).
 
+`--split` writes each period as two single-map pages instead, `<name>_erh`
+and `<name>_erv`, each with its own colour bar (same 0-5 km scale), in
+either mode.
+
 Usage
 -----
     python complem_figures/error_maps.py \
@@ -42,6 +46,11 @@ Usage
     python complem_figures/error_maps.py \
         --file RESULT/SSST_result.csv --start 2020 --end 2025 \
         --output complem_figures/error_maps_ssst/2020-2025.png
+
+    # Whole catalogue, ERH and ERV as separate pages (1976-2025_all_erh / _erv)
+    python complem_figures/error_maps.py \
+        --file RESULT/SSST_result.csv --start 1976 --end 2025 --split \
+        --output complem_figures/error_maps_ssst/1976-2025_all.png
 """
 
 import argparse
@@ -76,6 +85,7 @@ _BINS_LAT, _BINS_LON = 400, 860
 _WINDOW   = 4      # cells on each side -> 9 x 9
 _MIN_N    = 10
 _VMIN, _VMAX = 0.0, 5.0
+_ASPECT   = 1.0 / np.cos(np.deg2rad(0.5 * (_LAT_MIN + _LAT_MAX)))   # true geographic aspect
 
 _INK       = '#1A1A1A'
 _INK_MUTED = '#5A5A5A'
@@ -103,6 +113,7 @@ class ErrorMapsParams:
     coastlines: bool = True
     basemap_resolution: str = 'i'
     dem:        bool = True
+    split:      bool = False   # one page per column (<name>_erh / <name>_erv)
 
 
 # ---------------------------------------------------------------------------
@@ -219,76 +230,64 @@ def _style():
 # Public API
 # ---------------------------------------------------------------------------
 
-def plot_period(events, fig_save, parameters):
-    """Draw the ERH / ERV page of one period; writes <fig_save>.png and .pdf."""
-    _style()
-
+def _draw_panel(fig, rect, events, column, parameters, verbose, xlabel):
+    """One ERH or ERV map in `rect` (figure fractions); returns its mesh."""
     lat_edges = np.linspace(_LAT_MIN, _LAT_MAX, _BINS_LAT + 1)
     lon_edges = np.linspace(_LON_MIN, _LON_MAX, _BINS_LON + 1)
-    aspect    = 1.0 / np.cos(np.deg2rad(0.5 * (_LAT_MIN + _LAT_MAX)))
-
-    width = parameters.width_cm
-    left, right_block = 1.45, 1.6                       # cm: lat labels | colour bar
-    map_w = width - left - right_block
-    map_h = map_w * (_LAT_MAX - _LAT_MIN) * aspect / (_LON_MAX - _LON_MIN)
-    bottom, gap, top = 0.9, 0.35, 0.15                 # cm
-    height = bottom + 2 * map_h + gap + top
-
-    fig  = plt.figure(figsize=(width * _CM, height * _CM))
     cmap = sns.color_palette('rocket_r', as_cmap=True)
-    mesh = None
-    for k, column in enumerate(('erh', 'erv')):
-        y  = bottom + (1 - k) * (map_h + gap)
-        ax = fig.add_axes([left / width, y / height, map_w / width, map_h / height])
-        ax.set_axisbelow(True)
-        ax.grid(color=_GRID, linewidth=0.4)
-        # opaque cells over the relief: rocket_r and the hillshade both encode
-        # lightness, so the relief must not show through the error colours
-        relief = parameters.dem and draw_relief(ax, verbose=(k == 0))
-        median = windowed_median(events, column)
-        mesh = ax.pcolormesh(lon_edges, lat_edges, np.ma.masked_invalid(median),
-                             vmin=_VMIN, vmax=_VMAX, cmap=cmap, shading='auto',
-                             alpha=1.0 if relief else 0.9, rasterized=True)
-        ax.scatter(events['longitude'], events['latitude'], s=0.08, c=_EVENT_COLOR,
-                   linewidths=0, rasterized=True)
-        draw_basemap_lines(ax, borders=parameters.borders,
-                           coastlines=parameters.coastlines,
-                           resolution=parameters.basemap_resolution,
-                           verbose=(k == 0))
-        ax.text(0.01, 0.97, column.upper(), transform=ax.transAxes,
-                ha='left', va='top', fontsize=9, fontweight='bold')
-        ax.set_xlim(_LON_MIN, _LON_MAX)
-        ax.set_ylim(_LAT_MIN, _LAT_MAX)
-        ax.set_aspect(aspect)
-        ax.set_xticks(np.arange(-2, 4, 1))
-        ax.set_yticks(np.arange(42.0, 44.01, 0.5))
-        ax.xaxis.set_major_formatter(lambda v, _: f'{v:.0f}°'.replace('-', '\u2212'))
-        ax.yaxis.set_major_formatter(lambda v, _: f'{v:.1f}°')
-        ax.set_ylabel('Latitude')
-        if k == 0:
-            ax.tick_params(labelbottom=False)
-        else:
-            ax.set_xlabel('Longitude')
-        for side in ('top', 'right'):
-            ax.spines[side].set_visible(False)
-        valid = median[np.isfinite(median)]
-        if valid.size:
-            print(f'  {column.upper()}: {valid.size} cells, mean of medians {np.mean(valid):.2f} km, '
-                  f'max {np.max(valid):.2f} km, median over events {np.nanmedian(events[column]):.2f} km')
-        else:
-            print(f'  {column.upper()}: no cell reaches {_MIN_N} events, the map is empty')
 
-    cb_h = 0.7 * (2 * map_h + gap)
-    cax  = fig.add_axes([(left + map_w + 0.35) / width,
-                         (bottom + (2 * map_h + gap - cb_h) / 2) / height,
-                         0.25 / width, cb_h / height])
-    cb = fig.colorbar(mesh, cax=cax)
-    cb.set_label('Median error (km), 9 × 9-cell window', labelpad=4)
+    ax = fig.add_axes(rect)
+    ax.set_axisbelow(True)
+    ax.grid(color=_GRID, linewidth=0.4)
+    # opaque cells over the relief: rocket_r and the hillshade both encode
+    # lightness, so the relief must not show through the error colours
+    relief = parameters.dem and draw_relief(ax, verbose=verbose)
+    median = windowed_median(events, column)
+    mesh = ax.pcolormesh(lon_edges, lat_edges, np.ma.masked_invalid(median),
+                         vmin=_VMIN, vmax=_VMAX, cmap=cmap, shading='auto',
+                         alpha=1.0 if relief else 0.9, rasterized=True)
+    ax.scatter(events['longitude'], events['latitude'], s=0.08, c=_EVENT_COLOR,
+               linewidths=0, rasterized=True)
+    draw_basemap_lines(ax, borders=parameters.borders,
+                       coastlines=parameters.coastlines,
+                       resolution=parameters.basemap_resolution,
+                       verbose=verbose)
+    ax.text(0.01, 0.97, column.upper(), transform=ax.transAxes,
+            ha='left', va='top', fontsize=9, fontweight='bold')
+    ax.set_xlim(_LON_MIN, _LON_MAX)
+    ax.set_ylim(_LAT_MIN, _LAT_MAX)
+    ax.set_aspect(_ASPECT)
+    ax.set_xticks(np.arange(-2, 4, 1))
+    ax.set_yticks(np.arange(42.0, 44.01, 0.5))
+    ax.xaxis.set_major_formatter(lambda v, _: f'{v:.0f}°'.replace('-', '−'))
+    ax.yaxis.set_major_formatter(lambda v, _: f'{v:.1f}°')
+    ax.set_ylabel('Latitude')
+    if xlabel:
+        ax.set_xlabel('Longitude')
+    else:
+        ax.tick_params(labelbottom=False)
+    for side in ('top', 'right'):
+        ax.spines[side].set_visible(False)
+    valid = median[np.isfinite(median)]
+    if valid.size:
+        print(f'  {column.upper()}: {valid.size} cells, mean of medians {np.mean(valid):.2f} km, '
+              f'max {np.max(valid):.2f} km, median over events {np.nanmedian(events[column]):.2f} km')
+    else:
+        print(f'  {column.upper()}: no cell reaches {_MIN_N} events, the map is empty')
+    return mesh
+
+
+def _draw_colorbar(fig, mesh, rect, label):
+    """Colour bar of `mesh` in `rect` (figure fractions)."""
+    cb = fig.colorbar(mesh, cax=fig.add_axes(rect))
+    cb.set_label(label, labelpad=4)
     cb.outline.set_linewidth(0.5)
     cb.ax.tick_params(width=0.5, length=2.5)
     cb.solids.set(alpha=1)
 
-    base, _ = os.path.splitext(fig_save)
+
+def _save(fig, base):
+    """Write <base>.png and <base>.pdf, close the figure; returns both paths."""
     outputs = []
     for path in (f'{base}.png', f'{base}.pdf'):
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -297,6 +296,50 @@ def plot_period(events, fig_save, parameters):
         print(f'Figure saved @ {path}')
     plt.close(fig)
     return outputs
+
+
+def plot_period(events, fig_save, parameters):
+    """
+    Draw the ERH / ERV page of one period; writes <fig_save>.png and .pdf, or
+    with `parameters.split` one single-map page per column,
+    <fig_save>_erh.png/.pdf and <fig_save>_erv.png/.pdf.
+    """
+    _style()
+
+    width = parameters.width_cm
+    left, right_block = 1.45, 1.6                       # cm: lat labels | colour bar
+    map_w = width - left - right_block
+    map_h = map_w * (_LAT_MAX - _LAT_MIN) * _ASPECT / (_LON_MAX - _LON_MIN)
+    bottom, gap, top = 0.9, 0.35, 0.15                 # cm
+    cb_x  = left + map_w + 0.35
+    base, _ = os.path.splitext(fig_save)
+
+    if parameters.split:
+        height = bottom + map_h + top
+        cb_h   = 0.85 * map_h
+        outputs = []
+        for k, column in enumerate(('erh', 'erv')):
+            fig  = plt.figure(figsize=(width * _CM, height * _CM))
+            mesh = _draw_panel(fig, [left / width, bottom / height, map_w / width, map_h / height],
+                               events, column, parameters, verbose=(k == 0), xlabel=True)
+            _draw_colorbar(fig, mesh, [cb_x / width, (bottom + (map_h - cb_h) / 2) / height,
+                                       0.25 / width, cb_h / height],
+                           f'Median {column.upper()} (km), 9 × 9-cell window')
+            outputs += _save(fig, f'{base}_{column}')
+        return outputs
+
+    height = bottom + 2 * map_h + gap + top
+    fig  = plt.figure(figsize=(width * _CM, height * _CM))
+    mesh = None
+    for k, column in enumerate(('erh', 'erv')):
+        y    = bottom + (1 - k) * (map_h + gap)
+        mesh = _draw_panel(fig, [left / width, y / height, map_w / width, map_h / height],
+                           events, column, parameters, verbose=(k == 0), xlabel=(k == 1))
+    cb_h = 0.7 * (2 * map_h + gap)
+    _draw_colorbar(fig, mesh, [cb_x / width, (bottom + (2 * map_h + gap - cb_h) / 2) / height,
+                               0.25 / width, cb_h / height],
+                   'Median error (km), 9 × 9-cell window')
+    return _save(fig, base)
 
 
 def generate_figure(parameters):
@@ -360,6 +403,8 @@ def main():
                         help='which basemap_lines.py cache to read (default: i)')
     parser.add_argument('--no-dem', action='store_true',
                         help='do not draw the shaded relief under the error cells')
+    parser.add_argument('--split', action='store_true',
+                        help='one page per map, <name>_erh and <name>_erv, instead of the two-panel page')
     args = parser.parse_args()
     if (args.start is None) != (args.end is None):
         parser.error('--start and --end go together')
@@ -370,7 +415,7 @@ def main():
                                     borders=not args.no_borders,
                                     coastlines=not args.no_coastlines,
                                     basemap_resolution=args.basemap_resolution,
-                                    dem=not args.no_dem))
+                                    dem=not args.no_dem, split=args.split))
 
 
 if __name__ == '__main__':
