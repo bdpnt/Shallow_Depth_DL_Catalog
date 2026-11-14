@@ -24,8 +24,9 @@ Layout
   by `pygmt.project`, the draw order and the clipping to the colour range are
   those of `cross_section.py`. Format 6 reads the PDF expectation by default;
   `--solution maxlike` reads the maximum-likelihood hypocentre (see
-  `event_maps.hypocentre_columns`). Events kept per panel are printed: state
-  them in the caption.
+  `event_maps.hypocentre_columns`). Events kept per panel are printed — in the
+  swath (between the two ends) and shown (also within the depth range): state
+  the shown count in the caption.
 * Writes both a 300 dpi PNG and a vector PDF.
 * Also writes a location map `<output>_map.{png,pdf}` (`event_maps.generate_figure`)
   placing the section in the range: the seismicity of `--map-bulletin`
@@ -167,12 +168,17 @@ def _read_catalog(path, fmt, uncert_h, uncert_v, solution='expect'):
 
 
 def _project(lon, lat, depth, cval, p0, p1, half_width, workdir):
-    """Swath selection exactly as cross_section.py: pygmt.project, pz convention, km."""
+    """
+    Swath selection by pygmt.project (pz convention, km), restricted to the
+    segment between the two ends (length='limit', GMT -Lw). Without it the
+    whole infinite strip came back: the frame hid the extra events, but the
+    printed counts included them (Andorra SSST: 773 instead of 488).
+    """
     cross_file = os.path.join(workdir, 'cross.dat')
     pygmt.project(
         data=np.column_stack((lon, lat, depth, cval)),
         center=list(p0), endpoint=list(p1),
-        width=[-half_width, half_width],
+        width=[-half_width, half_width], length='limit',
         convention='pz', unit=True,
         outfile=cross_file, output_type='file',
     )
@@ -286,8 +292,11 @@ def generate_figure(parameters):
                 dy  = '-0.08c' if pos[0] == 'T' else '0.08c'
                 fig.text(text=tag, position=pos, justify=pos, offset=f'{dx}/{dy}',
                          font='10p,Helvetica-Bold,black')
+            visible = int(((data[:, 1] >= _PANEL_TOP) & (data[:, 1] <= parameters.depth_max)).sum()
+                          if len(data) else 0)
             print(f'panel {tag or i}: {path} (format {fmt}, {metric}) — '
-                  f'{len(lon)} events after filter, {len(data)} in the swath')
+                  f'{len(lon)} events after filter, {len(data)} in the swath, '
+                  f'{visible} shown ({_PANEL_TOP:g}-{parameters.depth_max:g} km)')
 
     if style is not None:
         pygmt.makecpt(cmap=style['cmap'], series=style['series'], reverse=style['reverse'])
