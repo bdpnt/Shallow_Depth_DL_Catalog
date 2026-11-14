@@ -27,10 +27,10 @@ Layout
   `event_maps.hypocentre_columns`). Events kept per panel are printed: state
   them in the caption.
 * Writes both a 300 dpi PNG and a vector PDF.
-* Also writes a location map `<output>_map.{png,pdf}` (`event_maps.generate_figure`):
-  the seismicity of the last format-6 panel (else format 4), unfiltered,
-  coloured by depth, with the swath (dashed box) and the axis (solid line);
-  extent = the swath's bounding box padded by one profile length.
+* Also writes a location map `<output>_map.{png,pdf}` (`event_maps.generate_figure`)
+  placing the section in the range: the seismicity of the last format-6 panel
+  (else format 4), unfiltered, coloured by depth, over the report extent
+  (`event_maps.REPORT_REGION`), with the swath (box) and the axis (line).
 
 Usage
 -----
@@ -77,7 +77,7 @@ if _PROJECT_ROOT not in sys.path:
 from complem_figures.cross_section import (  # noqa: E402
     NO_INFO_FILL, _dest_point, label_profile_ends)
 from complem_figures.event_maps import (  # noqa: E402
-    EventMapsParams, hypocentre_columns, profile_geometry)
+    REPORT_REGION, EventMapsParams, hypocentre_columns)
 from complem_figures.event_maps import generate_figure as event_map  # noqa: E402
 
 _ORIG_PANEL_W     = 10.0        # cm, cross_section.py panel width
@@ -179,10 +179,11 @@ def _project(lon, lat, depth, cval, p0, p1, half_width, workdir):
 
 def _location_map(parameters, base):
     """
-    Companion map of the section: the seismicity of the last panel that
-    event_maps can read (format 6, else 4; unfiltered, same --solution) around
-    the profile, with its swath (dashed box) and axis (solid line). The extent
-    is the swath's bounding box padded by one profile length on each side.
+    Companion map placing the section in the range: the seismicity of the last
+    panel that event_maps can read (format 6, else 4; unfiltered, same
+    --solution) over the report extent (event_maps.REPORT_REGION), with the
+    swath (box) and the axis (line), drawn solid and thick enough to stay
+    visible at that scale.
     """
     bulletin = next((p for p, f, _ in reversed(parameters.panels) if f in (6, 4)), None)
     if bulletin is None:
@@ -190,19 +191,13 @@ def _location_map(parameters, base):
         return None
     bulletin = bulletin if os.path.isabs(bulletin) else os.path.join(_PROJECT_ROOT, bulletin)
 
-    _, box  = profile_geometry(parameters.lon0, parameters.lat0, parameters.azimut,
-                               parameters.length, parameters.half_width)
-    pad_lat = parameters.length / 111.0
-    pad_lon = parameters.length / (111.0 * np.cos(np.radians(parameters.lat0)))
-    region  = [min(box[0]) - pad_lon, max(box[0]) + pad_lon,
-               min(box[1]) - pad_lat, max(box[1]) + pad_lat]
-
     return event_map(EventMapsParams(
         fileBulletin = bulletin,
         figSave      = f'{base}_map.png',
-        map_region   = region,
+        map_region   = list(REPORT_REGION),
         no_filter    = True,
-        dot_size     = 0.06,     # event_maps' 0.02 cm is sized for the whole range
+        axis_pen     = '1.5p,red',
+        box_pen      = '0.8p,red',
         solution     = parameters.solution if bulletin.endswith('.csv') else 'expect',
         profiles     = [(parameters.lon0, parameters.lat0, parameters.azimut,
                          parameters.length, parameters.half_width)],
