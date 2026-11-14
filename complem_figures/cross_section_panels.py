@@ -205,7 +205,7 @@ def _location_map(parameters, base):
         no_filter    = True,
         axis_pen     = '1.5p,red',
         box_pen      = '0.8p,red',
-        profile_inset = True,
+        inset_corners = ['BL'],
         faults       = True,     # QAFI v4, Iberian only: nothing north of ~43.14 N
         solution     = parameters.solution if bulletin.endswith('.csv') else 'expect',
         profiles     = [(parameters.lon0, parameters.lat0, parameters.azimut,
