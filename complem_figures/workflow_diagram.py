@@ -66,9 +66,9 @@ RIGHT_X, RIGHT_W = 15.2, 2.8       # magnitude models, velocity model, picks
 GAP = 0.45                         # vertical gap between consecutive nodes
 TOP = 0.15
 
-AGENCIES = [("RESIF", "2020–2025"), ("ICGC", "2020–2025"),
-            ("IGN", "2020–2025"), ("LDG", "2020–2025"),
-            ("OMP", "1978–2019")]
+AGENCIES = [("OMP", "1978–2019"), ("RESIF", "2020–2025"),
+            ("ICGC", "2020–2025"), ("IGN", "2020–2025"),
+            ("LDG", "2020–2025")]
 
 
 # ---------------------------------------------------------------------------
@@ -143,9 +143,10 @@ def _container(ax, box, n, label, header_h=0.55):
     ax.text(box.x, yh, label, ha="center", va="center", fontsize=FS_PROCESS,
             fontweight="bold", zorder=5)
     _badge(ax, box.x - box.w / 2 + 0.32, yh, n)
-    ax.text(box.x + box.w / 2 - 0.15, box.y + box.h / 2 - 0.12,
-            "× 6 zones", ha="right", va="bottom", fontsize=FS_SMALL,
-            style="italic", zorder=5)
+    # Outside, just above the top-right corner of the back copy (offset 2 x 0.09).
+    ax.text(box.x + box.w / 2 + 0.18, box.y - box.h / 2 - 0.18 - 0.06,
+            "× 6 zones", ha="right", va="bottom", fontsize=FS_DATA,
+            fontweight="bold", color=BADGE_COLOR, zorder=5)
 
 
 def _arrow(ax, *points, color=ARROW_COLOR, lw=0.8, both=False):
@@ -248,7 +249,7 @@ def plot_workflow(output=None, width_cm=17.4, dpi=300):
     # --- stage 1: station inventory ------------------------------------------
     meta = _Box(LEFT_X, y_src, LEFT_W, heights[0])
     _rect(ax, meta, "input")
-    ax.text(meta.x, meta.y, "Station metadata", ha="center", va="center",
+    ax.text(meta.x, meta.y, "All station inventories", ha="center", va="center",
             fontsize=FS_DATA, fontweight="bold", zorder=5)
     p1 = _process(ax, _Box(LEFT_X, y_p2, LEFT_W, heights[1]), 1,
                   "Station inventory fusion")
@@ -317,7 +318,7 @@ def plot_workflow(output=None, width_cm=17.4, dpi=300):
             fontsize=FS_SMALL, style="italic", zorder=5)
 
     d_ssst = _node(ax, _Box(MAIN_X, y_dssst, data_w, heights[10]), "data",
-                   "Hypocentres + location PDFs")
+                   "Hypocenters + location PDFs")
     _arrow(ax, p6.bottom, d_ssst.top)
 
     # --- stage 7: export --------------------------------------------------------
@@ -329,7 +330,7 @@ def plot_workflow(output=None, width_cm=17.4, dpi=300):
     ax.text(fin.x, fin.y - 0.17, "Final catalog (QuakeML)", ha="center",
             va="center", fontsize=FS_PROCESS, fontweight="bold", zorder=5)
     ax.text(fin.x, fin.y + 0.2,
-            "PDF-expectation hypocentres · quality flag", ha="center",
+            "PDF-expectation hypocenters · quality flag", ha="center",
             va="center", fontsize=FS_SMALL, zorder=5)
     _arrow(ax, p7.bottom, fin.top)
 
