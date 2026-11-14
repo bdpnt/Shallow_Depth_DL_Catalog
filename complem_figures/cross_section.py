@@ -78,8 +78,10 @@ from scipy.ndimage import gaussian_filter
 
 try:
     from complem_figures.basemap_lines import draw_relief_pygmt
+    from complem_figures.event_maps import compass_point
 except ImportError:                                     # run as a script
     from basemap_lines import draw_relief_pygmt
+    from event_maps import compass_point
 
 # ---------------------------------------------------------------------------
 # Module paths
@@ -96,9 +98,6 @@ _C68_Z_MIN        = -2.0
 # Fill of events whose uncertainty is unknown (catalogue without errors, or a
 # missing value), so no colour on the section can be mistaken for a measurement.
 NO_INFO_FILL = 'gray60'
-
-_COMPASS_16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
-               'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
 
 
 # ---------------------------------------------------------------------------
@@ -151,11 +150,6 @@ def _dest_point(lon, lat, azimut, dist_km):
     dlat = (dist_km * cos(az)) / R
     dlon = (dist_km * sin(az)) / (R * cos(radians(lat)))
     return lon + dlon, lat + dlat
-
-
-def compass_point(azimut):
-    """Nearest of the 16 compass points (N, NNE, NE, ...) to an azimuth in degrees."""
-    return _COMPASS_16[int(round((azimut % 360.0) / 22.5)) % 16]
 
 
 def label_profile_ends(fig, azimut, font):

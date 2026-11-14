@@ -215,6 +215,15 @@ def profile_geometry(lon0, lat0, azimut, length_km, half_width_km):
     return axis, box
 
 
+_COMPASS_16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+               'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+
+
+def compass_point(azimut):
+    """Nearest of the 16 compass points (N, NNE, NE, ...) to an azimuth in degrees."""
+    return _COMPASS_16[int(round((azimut % 360.0) / 22.5)) % 16]
+
+
 def _depth_cpt(pg, max_depth):
     """Session depth CPT: viridis reversed, magenta above sea level, black below max_depth."""
     with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
@@ -228,11 +237,6 @@ def _draw_profile_inset(fig, pg, events_df, parameters):
     compass direction of each axis end, the letters written above the
     cross-section panels. Extent: the swath padded by half the profile length.
     """
-    try:
-        from complem_figures.cross_section import compass_point
-    except ImportError:                                 # run as a script
-        from cross_section import compass_point
-
     lon0, lat0, azimut, length_km, half_width_km = parameters.profiles[0]
     axis, box = profile_geometry(lon0, lat0, azimut, length_km, half_width_km)
     pad_lat   = 0.5 * length_km / 111.0
