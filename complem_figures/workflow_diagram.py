@@ -52,6 +52,7 @@ STYLES = {
 BADGE_COLOR = "#7A4F0C"
 ARROW_COLOR = "#333333"
 BUS_COLOR = "#8C8C8C"
+CITE_COLOR = "#555555"
 FS_PROCESS = 8.0
 FS_DATA = 7.5
 FS_SMALL = 7.0
@@ -62,7 +63,7 @@ FS_SMALL = 7.0
 
 MAIN_X, MAIN_W = 9.6, 7.0          # main chain
 LEFT_X, LEFT_W = 2.35, 4.1         # station inventory branch
-RIGHT_X, RIGHT_W = 15.2, 2.8       # magnitude models, velocity model, picks
+RIGHT_X, RIGHT_W = 15.3, 3.5      # magnitude models, velocity model, picks
 GAP = 0.45                         # vertical gap between consecutive nodes
 TOP = 0.15
 
@@ -136,9 +137,12 @@ def _process(ax, box, n, label):
     return box
 
 
-def _container(ax, box, n, label, header_h=0.55):
+def _container(ax, box, n, label, cite, header_h=0.55):
     """Stage drawn as a stack of 6 zone boxes holding sub-steps."""
     _rect(ax, box, "process", stack=2)
+    ax.text(box.x + box.w / 2 - 0.15, box.y + box.h / 2 - 0.12, cite,
+            ha="right", va="bottom", fontsize=FS_SMALL, color=CITE_COLOR,
+            zorder=5)
     yh = box.y - box.h / 2 + header_h / 2 + 0.05
     ax.text(box.x, yh, label, ha="center", va="center", fontsize=FS_PROCESS,
             fontweight="bold", zorder=5)
@@ -205,7 +209,7 @@ def plot_workflow(output=None, width_cm=17.4, dpi=300):
     os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
 
     # Main-chain heights: sources, P2, D, P3, D, P4, D, P5, D, P6, D, P7, final
-    heights = [0.8, 0.65, 0.55, 0.65, 0.55, 1.85, 0.55, 0.65, 0.55, 2.05,
+    heights = [0.8, 0.65, 0.55, 0.65, 0.55, 2.15, 0.55, 0.65, 0.55, 2.35,
                0.55, 0.65, 0.95]
     ys, bottom = _stack_main(heights)
     (y_src, y_p2, y_dsrc, y_p3, y_duni, y_p4, y_drel, y_p5, y_daug, y_p6,
@@ -272,9 +276,10 @@ def plot_workflow(output=None, width_cm=17.4, dpi=300):
 
     # --- stage 4: NonLinLoc, two passes, 6 zones ------------------------------
     p4 = _Box(MAIN_X, y_p4, MAIN_W, heights[5])
-    _container(ax, p4, 4, "Absolute relocation (NonLinLoc)")
+    _container(ax, p4, 4, "Absolute relocation (NonLinLoc)",
+               "Lomax et al. (2000)")
     _arrow(ax, d_uni.bottom, p4.top)
-    y_sub = p4.y + 0.25
+    y_sub = p4.top[1] + 1.175
     pass1 = _node(ax, _Box(MAIN_X - 2.35, y_sub, 1.5, 0.6), "sub", "Pass 1")
     delays = _node(ax, _Box(MAIN_X, y_sub, 2.1, 0.75), "data",
                    "Station delays\n(from residuals)")
@@ -282,8 +287,14 @@ def plot_workflow(output=None, width_cm=17.4, dpi=300):
     _arrow(ax, pass1.right, delays.left)
     _arrow(ax, delays.right, pass2.left)
 
-    vel = _node(ax, _Box(RIGHT_X, y_p4, RIGHT_W, 0.75), "input",
-                "1-D velocity\nmodel", weight="bold")
+    vel = _Box(RIGHT_X, y_p4, RIGHT_W, 1.1)
+    _rect(ax, vel, "input")
+    ax.text(vel.x, vel.y - 0.27, "1-D velocity model", ha="center",
+            va="center", fontsize=FS_DATA, fontweight="bold", zorder=5)
+    ax.text(vel.x, vel.y + 0.15,
+            "Souriau & Pauchet (1998)\nVp/Vs: Derode et al. (2023)",
+            ha="center", va="center", fontsize=FS_SMALL, color=CITE_COLOR,
+            linespacing=1.15, zorder=5)
     _arrow(ax, vel.left, p4.right)
 
     d_rel = _node(ax, _Box(MAIN_X, y_drel, data_w, heights[6]), "data",
@@ -305,9 +316,10 @@ def plot_workflow(output=None, width_cm=17.4, dpi=300):
 
     # --- stage 6: SSST, iterative, 6 zones ------------------------------------
     p6 = _Box(MAIN_X, y_p6, MAIN_W, heights[9])
-    _container(ax, p6, 6, "SSST relocation (NonLinLoc)")
+    _container(ax, p6, 6, "SSST relocation (NonLinLoc)",
+               "Lomax & Savvaidis (2022)")
     _arrow(ax, d_aug.bottom, p6.top)
-    y_sub = p6.y + 0.05
+    y_sub = p6.top[1] + 1.075
     loc = _node(ax, _Box(MAIN_X - 1.45, y_sub, 1.7, 0.6), "sub", "Location")
     ssst = _node(ax, _Box(MAIN_X + 1.45, y_sub, 2.3, 0.75), "data",
                  "Source-specific\nstation terms")
@@ -342,7 +354,7 @@ def plot_workflow(output=None, width_cm=17.4, dpi=300):
             _dot(ax, LEFT_X, ty, BUS_COLOR)
         _arrow(ax, (LEFT_X, ty), (tx, ty), color=BUS_COLOR, lw=0.7)
 
-    x_bus = W - 0.3
+    x_bus = W - 0.15
     _line(ax, vel.right, (x_bus, vel.y), (x_bus, p6.y), color=BUS_COLOR,
           lw=0.7)
     _dot(ax, x_bus, p5.y, BUS_COLOR)
