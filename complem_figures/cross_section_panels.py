@@ -3,8 +3,8 @@ cross_section_panels.py
 =======================
 Several depth sections along one profile, side by side (`cross_section.py
 --no-map` draws one) — by default the Maladeta/Aneto profile before
-relocation (a, flat colour), after NonLinLoc (b) and after NonLinLoc-SSST (c),
-the last two coloured by ErV.
+relocation (a, flat grey: no uncertainty), after NonLinLoc (b) and after
+NonLinLoc-SSST (c), the last two coloured by ErV.
 
 Layout
 ------
@@ -14,7 +14,10 @@ Layout
 * Each panel keeps the 1:1 distance/depth scale of the original.
 * Depth labels on panel a only; one ErV colour bar, to the right of the last
   panel; a bold tag (a, b, c) in each panel's top-right corner; the sea-level
-  line drawn explicitly.
+  line drawn explicitly; the compass direction of each profile end (16 points)
+  above the panel's top corners.
+* Panels without uncertainty (METRIC 'none') are drawn grey, never in a colour
+  that could read as a measurement.
 * Symbol size is the original 0.15 cm rescaled by panel width (the original
   panel is 10 cm wide), so the sections look as dense as before.
 * Catalogue reading (formats 4, 5 and 6), the quality filter, the swath selection
@@ -67,10 +70,10 @@ _PROJECT_ROOT = os.path.dirname(_MODULE_DIR)
 
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
-from complem_figures.cross_section import _dest_point  # noqa: E402
+from complem_figures.cross_section import (  # noqa: E402
+    NO_INFO_FILL, _dest_point, label_profile_ends)
 from complem_figures.event_maps import hypocentre_columns  # noqa: E402
 
-_FLAT_FILL        = '#DF2B2B'   # cross_section.py, formats 4 and 5
 _ORIG_PANEL_W     = 10.0        # cm, cross_section.py panel width
 _ORIG_SYMBOL      = 0.15        # cm
 _PANEL_TOP        = -1.0        # km, as cross_section.py
@@ -223,11 +226,12 @@ def generate_figure(parameters):
                        'WSen' if i == 0 else 'wSen'],
             )
             fig.plot(x=[0, parameters.length], y=[0, 0], pen='0.25p,gray50')
+            label_profile_ends(fig, parameters.azimut, '8p,Helvetica-Bold,black')
 
             if len(data):
                 X, Z, cval = data[:, 0], data[:, 1], data[:, 2]
                 if metric == 'none':
-                    fig.plot(x=X, y=Z, style=f'c{symbol:.4f}c', fill=_FLAT_FILL, pen='0.15p,black')
+                    fig.plot(x=X, y=Z, style=f'c{symbol:.4f}c', fill=NO_INFO_FILL, pen='0.15p,black')
                 else:
                     style = _metric_style(metric, parameters.uncert_h, parameters.uncert_v)
                     order = np.argsort(cval)
