@@ -48,7 +48,8 @@ same flat-Earth helper (`_dest_point`, 1 deg = 111 km) that `cross_section.py`
 uses to select the events, so the rectangle drawn is exactly the strip
 projected onto the section. `EventMapsParams.profile_inset` (API only, used
 by `cross_section_panels.py`) adds a bottom-left zoom on the first profile,
-framed in red, with the compass direction of each axis end.
+framed in red, with the compass direction of each axis end (and the faults,
+thinner and without legend, when `faults` is on).
 
 Usage
 -----
@@ -253,6 +254,9 @@ def _draw_profile_inset(fig, pg, events_df, parameters):
         _depth_cpt(pg, parameters.max_depth)
         fig.plot(x=inside.Longitude, y=inside.Latitude, style='c0.04c',
                  fill=inside.Depth, cmap=True)
+        if parameters.faults:   # no legend here, the main map carries it
+            fig.plot(data=_QAFI_FILE,    pen='0.8p,darkorange')
+            fig.plot(data=_DEBATED_FILE, pen='0.8p,darkorange,3p_2p')
         fig.plot(x=box[0],  y=box[1],  pen='0.6p,red,3p_2p')
         fig.plot(x=axis[0], y=axis[1], pen='1.2p,red')
         gap_km = 0.15 * length_km

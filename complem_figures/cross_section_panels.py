@@ -31,7 +31,8 @@ Layout
   placing the section in the range: the seismicity of the last format-6 panel
   (else format 4), unfiltered, coloured by depth, over the report extent
   (`event_maps.REPORT_REGION`), with the swath (box) and the axis (line), and a
-  bottom-left inset zoomed on the profile showing its end directions (SW / NE...).
+  bottom-left inset zoomed on the profile showing its end directions (SW / NE...);
+  both carry the QAFI v4 fault traces (`event_maps` `faults`, Iberian only).
 
 Usage
 -----
@@ -200,6 +201,7 @@ def _location_map(parameters, base):
         axis_pen     = '1.5p,red',
         box_pen      = '0.8p,red',
         profile_inset = True,
+        faults       = True,     # QAFI v4, Iberian only: nothing north of ~43.14 N
         solution     = parameters.solution if bulletin.endswith('.csv') else 'expect',
         profiles     = [(parameters.lon0, parameters.lat0, parameters.azimut,
                          parameters.length, parameters.half_width)],
