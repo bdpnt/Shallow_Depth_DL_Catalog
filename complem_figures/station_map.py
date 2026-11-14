@@ -108,18 +108,18 @@ def generate_figure(parameters):
 
     if other:
         fig.plot(x=[s['lon'] for s in other], y=[s['lat'] for s in other],
-                 style='i0.12c', fill="#72a04e", pen='0.08p, black', transparency=5)
+                 style='i0.12c', fill="#CC79A7", pen='0.08p, black', transparency=5)
     if am:
         fig.plot(x=[s['lon'] for s in am], y=[s['lat'] for s in am],
-                 style='i0.14c', fill='#d9876f', pen='0.1p, black', transparency=10)
+                 style='i0.14c', fill='#E69F00', pen='0.1p, black', transparency=10)
     if primary:
         fig.plot(x=[s['lon'] for s in primary], y=[s['lat'] for s in primary],
-                 style='i0.16c', fill="#79b2d4", pen='0.15p, black', transparency=20)
+                 style='i0.16c', fill="#0072B2", pen='0.15p, black', transparency=20)
 
     legend_lines = (
-        "S 0.15c i 0.12c #72a04e 0.08p,black 0.3c Temporary networks\n"
-        "S 0.15c i 0.14c #d9876f 0.1p,black  0.3c RaspberryShake network\n"
-        "S 0.15c i 0.16c #79b2d4 0.15p,black 0.3c Permanent networks\n"
+        "S 0.15c i 0.12c #CC79A7 0.08p,black 0.3c Temporary networks\n"
+        "S 0.15c i 0.14c #E69F00 0.1p,black  0.3c RaspberryShake network\n"
+        "S 0.15c i 0.16c #0072B2 0.15p,black 0.3c Permanent networks\n"
     )
     with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp:
         tmp.write(legend_lines)
