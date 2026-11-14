@@ -153,6 +153,11 @@ def _dest_point(lon, lat, azimut, dist_km):
     return lon + dlon, lat + dlat
 
 
+def compass_point(azimut):
+    """Nearest of the 16 compass points (N, NNE, NE, ...) to an azimuth in degrees."""
+    return _COMPASS_16[int(round((azimut % 360.0) / 22.5)) % 16]
+
+
 def label_profile_ends(fig, azimut, font):
     """
     Write the compass direction of each end of the current section panel above
@@ -168,8 +173,7 @@ def label_profile_ends(fig, azimut, font):
     # Flush with the panel edge (BL/BR), not centred on the corner, so the
     # labels of side-by-side panels never run into each other.
     for end_az, corner, just in ((azimut + 180.0, 'TL', 'BL'), (azimut, 'TR', 'BR')):
-        label = _COMPASS_16[int(round((end_az % 360.0) / 22.5)) % 16]
-        fig.text(text=label, position=corner, justify=just, offset='0c/0.12c',
+        fig.text(text=compass_point(end_az), position=corner, justify=just, offset='0c/0.12c',
                  font=font, no_clip=True)
 
 

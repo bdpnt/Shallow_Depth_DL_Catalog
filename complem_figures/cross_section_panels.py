@@ -30,7 +30,8 @@ Layout
 * Also writes a location map `<output>_map.{png,pdf}` (`event_maps.generate_figure`)
   placing the section in the range: the seismicity of the last format-6 panel
   (else format 4), unfiltered, coloured by depth, over the report extent
-  (`event_maps.REPORT_REGION`), with the swath (box) and the axis (line).
+  (`event_maps.REPORT_REGION`), with the swath (box) and the axis (line), and a
+  bottom-left inset zoomed on the profile showing its end directions (SW / NE...).
 
 Usage
 -----
@@ -198,6 +199,7 @@ def _location_map(parameters, base):
         no_filter    = True,
         axis_pen     = '1.5p,red',
         box_pen      = '0.8p,red',
+        profile_inset = True,
         solution     = parameters.solution if bulletin.endswith('.csv') else 'expect',
         profiles     = [(parameters.lon0, parameters.lat0, parameters.azimut,
                          parameters.length, parameters.half_width)],

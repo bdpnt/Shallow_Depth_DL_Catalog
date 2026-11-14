@@ -46,7 +46,9 @@ rather than GMT's `--` shorthand, whose dash and gap lengths are multiples of
 the pen width and so grow with it. The swath geometry is computed with the
 same flat-Earth helper (`_dest_point`, 1 deg = 111 km) that `cross_section.py`
 uses to select the events, so the rectangle drawn is exactly the strip
-projected onto the section.
+projected onto the section. `EventMapsParams.profile_inset` (API only, used
+by `cross_section_panels.py`) adds a bottom-left zoom on the first profile,
+framed in red, with the compass direction of each axis end.
 
 Usage
 -----
@@ -139,6 +141,7 @@ class EventMapsParams:
     box_pen:       str             = '0.4p,red,3p_2p'
     dem:           bool            = True       # shaded relief instead of flat land / sea
     faults:        bool            = False      # QAFI v4 fault traces (main + debated) over the events
+    profile_inset: bool            = False      # zoom on the first profile, bottom-left corner
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +212,55 @@ def profile_geometry(lon0, lat0, azimut, length_km, half_width_km):
     box  = ([lon1a, lon2a, lon2b, lon1b, lon1a],
             [lat1a, lat2a, lat2b, lat1b, lat1a])
     return axis, box
+
+
+def _depth_cpt(pg, max_depth):
+    """Session depth CPT: viridis reversed, magenta above sea level, black below max_depth."""
+    with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
+        pg.makecpt(cmap='viridis', series=[0, max_depth, 1], reverse=True)
+
+
+def _draw_profile_inset(fig, pg, events_df, parameters):
+    """
+    Zoom on the first profile in the bottom-left corner, framed in red like
+    its swath on the main map: relief, events, swath (dashed), axis, and the
+    compass direction of each axis end, the letters written above the
+    cross-section panels. Extent: the swath padded by half the profile length.
+    """
+    try:
+        from complem_figures.cross_section import compass_point
+    except ImportError:                                 # run as a script
+        from cross_section import compass_point
+
+    lon0, lat0, azimut, length_km, half_width_km = parameters.profiles[0]
+    axis, box = profile_geometry(lon0, lat0, azimut, length_km, half_width_km)
+    pad_lat   = 0.5 * length_km / 111.0
+    pad_lon   = 0.5 * length_km / (111.0 * cos(radians(lat0)))
+    region    = [min(box[0]) - pad_lon, max(box[0]) + pad_lon,
+                 min(box[1]) - pad_lat, max(box[1]) + pad_lat]
+    proj      = 'M3.5c'
+    inside    = events_df[events_df.Longitude.between(region[0], region[1])
+                          & events_df.Latitude.between(region[2], region[3])]
+
+    with fig.inset(position='jBL+w3.5c+o0.15c', box='+gwhite+p1p,red'):
+        if parameters.dem:
+            draw_relief_pygmt(fig, region, proj)
+            fig.coast(region=region, projection=proj, shorelines=PYGMT_SHORELINE,
+                      resolution='f', borders='1/0.6p,black', frame='+n')
+        else:
+            fig.coast(region=region, projection=proj, water='skyblue', land='#777777',
+                      resolution='f', borders='1/0.6p,black', frame='+n')
+        _depth_cpt(pg, parameters.max_depth)
+        fig.plot(x=inside.Longitude, y=inside.Latitude, style='c0.04c',
+                 fill=inside.Depth, cmap=True)
+        fig.plot(x=box[0],  y=box[1],  pen='0.6p,red,3p_2p')
+        fig.plot(x=axis[0], y=axis[1], pen='1.2p,red')
+        gap_km = 0.15 * length_km
+        for end_az, (lon, lat) in ((azimut + 180.0, (axis[0][0], axis[1][0])),
+                                   (azimut,         (axis[0][1], axis[1][1]))):
+            x, y = _dest_point(lon, lat, end_az, gap_km)
+            fig.text(x=x, y=y, text=compass_point(end_az), font='7p,Helvetica-Bold,black',
+                     fill='white', clearance='1p/1p')
 
 
 def _read_catalog(parameters):
@@ -320,8 +372,7 @@ def generate_figure(parameters):
         fig.plot(x=stations.Longitude, y=stations.Latitude,
                  style='i0.1c', fill='black', transparency=40)
 
-    with pg.config(COLOR_BACKGROUND='black', COLOR_FOREGROUND=ABOVE_SEA_COLOR):  # swapped by reverse
-        pg.makecpt(cmap='viridis', series=[0, parameters.max_depth, 1], reverse=True)
+    _depth_cpt(pg, parameters.max_depth)
     fig.plot(
         x=events_df.Longitude,
         y=events_df.Latitude,
@@ -342,6 +393,9 @@ def generate_figure(parameters):
         axis, box = profile_geometry(lon0, lat0, azimut, length_km, half_width_km)
         fig.plot(x=box[0],  y=box[1],  pen=parameters.box_pen)
         fig.plot(x=axis[0], y=axis[1], pen=parameters.axis_pen)
+
+    if parameters.profile_inset and parameters.profiles:
+        _draw_profile_inset(fig, pg, events_df, parameters)
 
     fig.colorbar(position='JBC+e',   # end triangles: pink above sea level, black deeper
                  frame=['a5f5+lDepth (km)'])
