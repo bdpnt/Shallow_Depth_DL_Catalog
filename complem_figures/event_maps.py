@@ -346,9 +346,9 @@ def generate_figure(parameters):
     is_csv = parameters.fileBulletin.endswith('.csv')
     label  = {'expect': 'Expectation depth', 'maxlike': 'Max-likelihood depth'}[
         parameters.solution] if is_csv else 'Depth'
-    fig.colorbar(frame=[f'a5f5+l{label} [km] '
-                        f'(deeper than {parameters.max_depth:g} in black, '
-                        f'above sea level in magenta)'])
+    fig.colorbar(position='JBC+e',   # end triangles: pink above sea level, black deeper
+                 frame=[f'a5f5+l{label} [km] '
+                        f'(pink: above sea level, black: deeper than {parameters.max_depth:g} km)'])
 
     base, _  = os.path.splitext(parameters.figSave)
     outputs  = []

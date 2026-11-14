@@ -257,7 +257,8 @@ def generate_figure(parameters):
             cmap=True,
             transparency=15,
         )
-        fig.colorbar(frame=['a5f5+lDepth [km] (deeper than 15 in black, above sea level in magenta)'])
+        fig.colorbar(position='JBC+e',   # end triangles: pink above sea level, black deeper
+                     frame=['a5f5+lDepth [km] (pink: above sea level, black: deeper than 15 km)'])
 
     os.makedirs(os.path.dirname(parameters.figSave), exist_ok=True)
     fig.savefig(parameters.figSave, dpi=300)
